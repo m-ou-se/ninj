@@ -16,28 +16,28 @@ pub struct Scope<'a: 'p, 'p> {
 #[derive(Debug)]
 pub struct BuildScope<'a> {
 	pub file_scope: &'a Scope<'a, 'a>,
-	pub build_vars: &'a Vec<Var<'a>>,
+	pub build_vars: &'a [Var<'a>],
 }
 
 #[derive(Debug)]
 pub struct BuildRuleScope<'a> {
 	pub build_scope: BuildScope<'a>,
-	pub rule_vars: &'a Vec<Var<'a>>,
-	pub inputs: &'a Vec<String>,
-	pub outputs: &'a Vec<String>,
+	pub rule_vars: &'a [Var<'a>],
+	pub inputs: &'a [String],
+	pub outputs: &'a [String],
 }
 
 pub enum FoundVar<'a> {
 	Expanded(&'a str),
 	Unexpanded(&'a str),
-	Paths(&'a Vec<String>),
+	Paths(&'a [String]),
 }
 
 pub trait VarScope {
 	fn lookup_var(&self, var_name: &str) -> Option<FoundVar>;
 }
 
-impl<'a> VarScope for Vec<Var<'a>> {
+impl<'a> VarScope for [Var<'a>] {
 	fn lookup_var(&self, var_name: &str) -> Option<FoundVar> {
 		self.iter()
 			.rfind(|Var { name, .. }| *name == var_name)
@@ -45,7 +45,7 @@ impl<'a> VarScope for Vec<Var<'a>> {
 	}
 }
 
-impl<'a> VarScope for Vec<ExpandedVar<'a>> {
+impl<'a> VarScope for [ExpandedVar<'a>] {
 	fn lookup_var(&self, var_name: &str) -> Option<FoundVar> {
 		self.iter()
 			.rfind(|ExpandedVar { name, .. }| *name == var_name)
