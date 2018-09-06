@@ -60,29 +60,26 @@ pub fn read_into<'a: 'p, 'p>(
 						build_vars: &build.vars,
 					};
 
-					let outputs = expand_strs(&build.explicit_outputs, &scope);
-					let inputs = expand_strs(&build.explicit_deps, &scope);
+					let mut build_rule = BuildRule {
+						explicit_outputs: expand_strs(&build.explicit_outputs, &scope),
+						explicit_deps: expand_strs(&build.explicit_deps, &scope),
+						implicit_outputs: expand_strs(&build.implicit_outputs, &scope),
+						implicit_deps: expand_strs(&build.implicit_deps, &scope),
+						order_deps: expand_strs(&build.order_deps, &scope),
+						command: String::new(),
+						description: String::new(),
+					};
 
-					let mut build_rule = {
+					{
 						let scope = BuildRuleScope {
 							build_scope: scope,
 							rule_vars: &rule.vars,
-							inputs: &inputs,
-							outputs: &outputs,
+							inputs: &build_rule.explicit_deps,
+							outputs: &build_rule.explicit_outputs,
 						};
-						BuildRule {
-							explicit_outputs: Vec::new(),
-							explicit_deps: Vec::new(),
-							implicit_outputs: expand_strs(&build.implicit_outputs, &scope),
-							implicit_deps: expand_strs(&build.implicit_deps, &scope),
-							order_deps: expand_strs(&build.order_deps, &scope),
-							command: expand_var("command", &scope),
-							description: expand_var("description", &scope),
-						}
-					};
-
-					build_rule.explicit_outputs = outputs;
-					build_rule.explicit_deps = inputs;
+						build_rule.description = expand_var("description", &scope);
+						build_rule.command = expand_var("command", &scope);
+					}
 
 					spec.build_rules.push(build_rule);
 				}
