@@ -1,0 +1,7 @@
+[package]
+name = "ninj"
+version = "0.1.0"
+authors = ["Mara Bos <m-ou.se@m-ou.se>"]
+
+[dependencies]
+pile = "0.1"

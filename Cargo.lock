@@ -1,0 +1,23 @@
+[[package]]
+name = "ninj"
+version = "0.1.0"
+dependencies = [
+ "pile 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "pile"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "stable_deref_trait 1.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "stable_deref_trait"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[metadata]
+"checksum pile 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a050cc1e09fdf605fe325dd6200872e6c9a5b007b1eb2c1ba717d3e387004a3e"
+"checksum stable_deref_trait 1.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "dba1a27d3efae4351c8051072d619e3ade2820635c3958d826bfea39d59b54c8"
