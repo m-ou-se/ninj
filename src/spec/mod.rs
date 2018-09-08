@@ -56,6 +56,8 @@ pub enum BuildRuleCommand {
 		depfile: RawString,
 		/// The way extra dependencies are to be discovered.
 		deps: Option<DepStyle>,
+		/// The message to watch for on standard output for extra dependencies.
+		msvc_deps_prefix: RawString,
 		/// Rule is used to re-invoke the generator. See ninja manual.
 		generator: bool,
 		/// Re-stat the command output to check if they actually changed.

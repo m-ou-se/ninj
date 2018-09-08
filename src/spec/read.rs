@@ -116,6 +116,7 @@ fn read_into<'a: 'p, 'p>(
 							b"msvc" => Some(DepStyle::Msvc),
 							_ => None,
 						},
+						msvc_deps_prefix: expand_var("msvc_deps_prefix")?,
 						generator: build_rule_scope.lookup_var("generator").is_some(),
 						restat: build_rule_scope.lookup_var("restat").is_some(),
 						rspfile: expand_var("rspfile")?,
