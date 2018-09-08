@@ -31,9 +31,12 @@ pub struct BuildRule {
 	pub command: BuildRuleCommand,
 }
 
+/// The method of discovering extra dependencies.
 #[derive(Debug)]
 pub enum DepStyle {
+	/// Through a Makefile-formatted file as specified by `depfile`.
 	Gcc,
+	/// Through specific messages detected on the standard output.
 	Msvc,
 }
 
@@ -49,11 +52,17 @@ pub enum BuildRuleCommand {
 		command: RawString,
 		/// The description to be shown to the user.
 		description: RawString,
+		/// The file to read the extra dependencies from.
 		depfile: RawString,
+		/// The way extra dependencies are to be discovered.
 		deps: Option<DepStyle>,
+		/// Rule is used to re-invoke the generator. See ninja manual.
 		generator: bool,
+		/// Re-stat the command output to check if they actually changed.
 		restat: bool,
+		/// A file to write before executing the command.
 		rspfile: RawString,
+		/// The contents of the file to write before executing the command.
 		rspfile_content: RawString,
 	},
 }
