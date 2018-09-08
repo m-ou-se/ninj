@@ -1,4 +1,5 @@
 use super::error::{ErrorWithLocation, ReadError};
+use std::borrow::ToOwned;
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
 use super::parse::{Parser, Statement, Variable};
 use super::path::to_path;
@@ -10,13 +11,12 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> &'a RawStr {
+fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawStr, ReadError> {
 	let mut bytes = Vec::new();
-	File::open(file_name)
-		.unwrap()
-		.read_to_end(&mut bytes)
-		.unwrap(); // TODO: error handling
-	RawStr::from_bytes(pile.add(bytes))
+	File::open(file_name).and_then(|mut f| f.read_to_end(&mut bytes)).map_err(|error| {
+		ReadError::IoError { file_name: file_name.to_owned(), error }
+	})?;
+	Ok(RawStr::from_bytes(pile.add(bytes)))
 }
 
 /// Read, parse, and resolve rules and variables in a `ninja.build` file.
@@ -24,21 +24,27 @@ fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> &'a RawStr {
 /// Parses the file, including any included and subninja'd files, and resolves
 /// all rules and variables, resulting in a `Spec`.
 pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
-	let mut spec = Spec::new();
 	let pile = Pile::new();
+	let source = read_bytes(file_name, &pile).map_err(|error| {
+		ErrorWithLocation {
+			file: String::new(),
+			line: 0,
+			error,
+		}
+	})?;
+	let mut spec = Spec::new();
 	let mut scope = FileScope::new();
-	read_into(file_name, &pile, &mut spec, &mut scope)?;
+	read_into(file_name, &source, &pile, &mut spec, &mut scope)?;
 	Ok(spec)
 }
 
 fn read_into<'a: 'p, 'p>(
 	file_name: &Path,
+	source: &'a RawStr,
 	pile: &'a Pile<Vec<u8>>,
 	spec: &mut Spec,
 	scope: &mut FileScope<'a, 'p>,
 ) -> Result<(), ErrorWithLocation<ReadError>> {
-	let source = read_bytes(file_name, &pile);
-
 	let mut parser = Parser::new(file_name, source);
 
 	while let Some(statement) = parser.next_statement()? {
@@ -145,17 +151,22 @@ fn read_into<'a: 'p, 'p>(
 				))?;
 			}
 			Statement::Include { path } => {
-				let path = parser.location().map_error(expand_str(path, scope))?;
-				let path = parser.location().map_error(to_path(&path))?;
-				read_into(&file_name.with_file_name(path), &pile, spec, scope)?;
+				let loc = parser.location();
+				let path = loc.map_error(expand_str(path, scope))?;
+				let path = loc.map_error(to_path(&path))?;
+				let source = loc.map_error(read_bytes(path, &pile))?;
+				read_into(&file_name.with_file_name(path), &source, &pile, spec, scope)?;
 			}
 			Statement::SubNinja { path } => {
-				let path = parser.location().map_error(expand_str(path, scope))?;
-				let path = parser.location().map_error(to_path(&path))?;
+				let loc = parser.location();
+				let path = loc.map_error(expand_str(path, scope))?;
+				let path = loc.map_error(to_path(&path))?;
 				let subpile = Pile::new();
+				let source = loc.map_error(read_bytes(path, &subpile))?;
 				let mut subscope = scope.new_subscope();
 				read_into(
 					&file_name.with_file_name(path),
+					&source,
 					&subpile,
 					spec,
 					&mut subscope,

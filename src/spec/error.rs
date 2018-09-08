@@ -34,7 +34,14 @@ impl<'a> Location<'a> {
 
 impl<T: std::fmt::Display> std::fmt::Display for ErrorWithLocation<T> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{}:{}: {}", self.file, self.line, self.error)
+		if !self.file.is_empty() || self.line != 0 {
+			write!(f, "{}", self.file)?;
+			if self.line != 0 {
+				write!(f, ":{}", self.line)?;
+			}
+			write!(f, ": ")?;
+		}
+		write!(f, "{}", self.error)
 	}
 }
 
@@ -144,6 +151,11 @@ pub enum ReadError {
 	UndefinedRule(String),
 	/// Variable expansion encountered a cycle.
 	ExpansionError(ExpansionError),
+	/// A problem while trying to open or read a file.
+	IoError {
+		file_name: std::path::PathBuf,
+		error: std::io::Error,
+	},
 }
 
 impl std::fmt::Display for ReadError {
@@ -152,11 +164,21 @@ impl std::fmt::Display for ReadError {
 			ReadError::ParseError(e) => write!(f, "{}", e),
 			ReadError::UndefinedRule(n) => write!(f, "Undefined rule name: {}", n),
 			ReadError::ExpansionError(e) => write!(f, "{}", e),
+			ReadError::IoError { file_name, error } => {
+				write!(f, "Unable to read {:?}: {}", file_name, error)
+			}
 		}
 	}
 }
 
-impl std::error::Error for ReadError {}
+impl std::error::Error for ReadError {
+	fn cause(&self) -> Option<&std::error::Error> {
+		match self {
+			ReadError::IoError { error, .. } => Some(error),
+			_ => None,
+		}
+	}
+}
 
 impl From<ParseError> for ReadError {
 	fn from(src: ParseError) -> ReadError {
