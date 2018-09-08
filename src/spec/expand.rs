@@ -14,8 +14,8 @@ pub fn expand_str<S: VarScope>(value: &str, scope: &S) -> String {
 	s
 }
 
-pub fn expand_strs<S: VarScope>(value: &[&str], scope: &S) -> Vec<String> {
-	value.iter().map(|s| expand_str(s, scope)).collect()
+pub fn expand_strs<'a, S: VarScope>(value: &'a [&'a str], scope: &'a S) -> impl Iterator<Item=String> + 'a {
+	value.iter().map(move |s| expand_str(s, scope))
 }
 
 fn expand_var_to<S: VarScope>(var_name: &str, scope: &S, result: &mut String, prot: Option<&RecursionProtection>) {

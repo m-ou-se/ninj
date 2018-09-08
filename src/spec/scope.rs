@@ -21,7 +21,7 @@ pub struct BuildScope<'a> {
 
 #[derive(Debug)]
 pub struct BuildRuleScope<'a> {
-	pub build_scope: BuildScope<'a>,
+	pub build_scope: &'a BuildScope<'a>,
 	pub rule_vars: &'a [Var<'a>],
 	pub inputs: &'a [String],
 	pub outputs: &'a [String],

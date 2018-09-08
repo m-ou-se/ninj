@@ -1,5 +1,5 @@
 use super::expand::{expand_str, expand_strs, expand_var};
-use super::{BuildRule, BuildScope, ExpandedVar, Parser, Scope, Spec, Statement, BuildRuleScope};
+use super::{BuildRule, BuildScope, ExpandedVar, Parser, Scope, Spec, Statement, BuildRuleScope, BuildRuleCommand};
 use pile::Pile;
 use std::fs::File;
 use std::io::Read;
@@ -44,9 +44,20 @@ pub fn read_into<'a: 'p, 'p>(
 			}
 			Rule(rule) => scope.rules.push(rule),
 			Build(build) => {
-				if build.rule_name == "phony" {
-					//TODO println!("Phony rule ignored!");
+				// Bring the build variables into scope.
+				let build_scope = BuildScope {
+					file_scope: &scope,
+					build_vars: &build.vars,
+				};
+
+				// And expand the input and output paths with it.
+				let mut outputs: Vec<String> = expand_strs(&build.explicit_outputs, &build_scope).collect();
+				let mut inputs: Vec<String> = expand_strs(&build.explicit_deps, &build_scope).collect();
+
+				let command = if build.rule_name == "phony" {
+					BuildRuleCommand::Phony
 				} else {
+					// Look up the rule in the current scope.
 					let rule = scope.lookup_rule(build.rule_name).unwrap_or_else(|| {
 						panic!(
 							"Unknown rule {:?} on line {}",
@@ -55,34 +66,30 @@ pub fn read_into<'a: 'p, 'p>(
 						);
 					});
 
-					let scope = BuildScope {
-						file_scope: &scope,
-						build_vars: &build.vars,
+					// Bring $in, $out, and the rule variables into scope.
+					let build_rule_scope = BuildRuleScope {
+						build_scope: &build_scope,
+						rule_vars: &rule.vars,
+						inputs: &inputs,
+						outputs: &outputs,
 					};
 
-					let mut build_rule = BuildRule {
-						explicit_outputs: expand_strs(&build.explicit_outputs, &scope),
-						explicit_deps: expand_strs(&build.explicit_deps, &scope),
-						implicit_outputs: expand_strs(&build.implicit_outputs, &scope),
-						implicit_deps: expand_strs(&build.implicit_deps, &scope),
-						order_deps: expand_strs(&build.order_deps, &scope),
-						command: String::new(),
-						description: String::new(),
-					};
-
-					{
-						let scope = BuildRuleScope {
-							build_scope: scope,
-							rule_vars: &rule.vars,
-							inputs: &build_rule.explicit_deps,
-							outputs: &build_rule.explicit_outputs,
-						};
-						build_rule.description = expand_var("description", &scope);
-						build_rule.command = expand_var("command", &scope);
+					// And expand the command and description with it.
+					BuildRuleCommand::Command {
+						command: expand_var("command", &build_rule_scope),
+						description: expand_var("description", &build_rule_scope),
 					}
+				};
 
-					spec.build_rules.push(build_rule);
-				}
+				outputs.extend(expand_strs(&build.implicit_outputs, &build_scope));
+				inputs.extend(expand_strs(&build.implicit_deps, &build_scope));
+
+				spec.build_rules.push(BuildRule {
+					outputs: outputs,
+					deps: inputs,
+					order_deps: expand_strs(&build.order_deps, &build_scope).collect(),
+					command,
+				});
 			}
 			Default { paths } => {
 				spec.default_targets

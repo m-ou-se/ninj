@@ -18,13 +18,19 @@ pub struct Spec {
 
 #[derive(Debug)]
 pub struct BuildRule {
-	command: String,
-	description: String,
-	explicit_outputs: Vec<String>,
-	implicit_outputs: Vec<String>,
-	explicit_deps: Vec<String>,
-	implicit_deps: Vec<String>,
+	outputs: Vec<String>,
+	deps: Vec<String>,
 	order_deps: Vec<String>,
+	command: BuildRuleCommand,
+}
+
+#[derive(Debug)]
+pub enum BuildRuleCommand {
+	Phony,
+	Command {
+		command: String,
+		description: String,
+	}
 }
 
 impl Spec {
