@@ -11,22 +11,19 @@ pub struct Parser<'a, 'b> {
 	escaped_lines: i32,
 }
 
-#[derive(Debug)]
-pub struct Build<'a> {
-	pub rule_name: &'a str,
-	pub explicit_outputs: Vec<&'a str>,
-	pub implicit_outputs: Vec<&'a str>,
-	pub explicit_deps: Vec<&'a str>,
-	pub implicit_deps: Vec<&'a str>,
-	pub order_deps: Vec<&'a str>,
-}
-
 // TODO: Use OsStr for paths and values?
 #[derive(Debug)]
 pub enum Statement<'a> {
 	Variable { name: &'a str, value: &'a str },
 	Rule { name: &'a str},
-	Build(Build<'a>),
+	Build {
+		rule_name: &'a str,
+		explicit_outputs: Vec<&'a str>,
+		implicit_outputs: Vec<&'a str>,
+		explicit_deps: Vec<&'a str>,
+		implicit_deps: Vec<&'a str>,
+		order_deps: Vec<&'a str>,
+	},
 	Default { paths: Vec<&'a str> },
 	Include { path: &'a str },
 	SubNinja { path: &'a str },
@@ -185,14 +182,14 @@ impl<'a, 'b> Parser<'a, 'b> {
 					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
 				}
 
-				Statement::Build(Build {
+				Statement::Build {
 					rule_name,
 					explicit_outputs,
 					implicit_outputs,
 					explicit_deps,
 					implicit_deps,
 					order_deps,
-				})
+				}
 			}
 			"rule" => {
 				let name = eat_identifier(&mut line)

@@ -50,7 +50,14 @@ pub fn read_into<'a: 'p, 'p>(
 				}
 				scope.rules.push(Rule { name, vars })
 			}
-			Statement::Build(build) => {
+			Statement::Build {
+				rule_name,
+				explicit_outputs,
+				implicit_outputs,
+				explicit_deps,
+				implicit_deps,
+				order_deps,
+			} => {
 				let location = parser.location();
 
 				let mut vars = Vec::new();
@@ -70,16 +77,16 @@ pub fn read_into<'a: 'p, 'p>(
 				let make_error = |e| location.make_error(e);
 
 				// And expand the input and output paths with it.
-				let mut outputs = expand_strs(&build.explicit_outputs, &build_scope).map_err(make_error)?;
-				let mut inputs = expand_strs(&build.explicit_deps, &build_scope).map_err(make_error)?;
+				let mut outputs = expand_strs(&explicit_outputs, &build_scope).map_err(make_error)?;
+				let mut inputs = expand_strs(&explicit_deps, &build_scope).map_err(make_error)?;
 
-				let command = if build.rule_name == "phony" {
+				let command = if rule_name == "phony" {
 					BuildRuleCommand::Phony
 				} else {
 					// Look up the rule in the current scope.
 					let rule = scope
-						.lookup_rule(build.rule_name)
-						.ok_or_else(|| location.make_error(ReadError::UndefinedRule(build.rule_name.to_string())))?;
+						.lookup_rule(rule_name)
+						.ok_or_else(|| location.make_error(ReadError::UndefinedRule(rule_name.to_string())))?;
 
 					// Bring $in, $out, and the rule variables into scope.
 					let build_rule_scope = BuildRuleScope {
@@ -96,13 +103,13 @@ pub fn read_into<'a: 'p, 'p>(
 					}
 				};
 
-				expand_strs_into(&build.implicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
-				expand_strs_into(&build.implicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
+				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
+				expand_strs_into(&implicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
 
 				spec.build_rules.push(BuildRule {
 					outputs: outputs,
 					deps: inputs,
-					order_deps: expand_strs(&build.order_deps, &build_scope).map_err(make_error)?,
+					order_deps: expand_strs(&order_deps, &build_scope).map_err(make_error)?,
 					command,
 				});
 			}
