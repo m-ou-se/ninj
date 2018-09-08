@@ -41,12 +41,20 @@ pub fn eat_identifier_str<'a>(src: &mut &'a str) -> Option<&'a str> {
 	ident
 }
 
-// TODO: allow $-escape sequences.
 pub fn eat_path<'a>(src: &mut &'a [u8]) -> Option<&'a str> {
+	let mut escape = false;
 	let ident_end = src
 		.iter()
-		.position(|c| b" :|".contains(c))
-		.unwrap_or(src.len());
+		.position(|c| {
+			if escape {
+				escape = false;
+			} else if b" :|".contains(c) {
+				return true
+			} else if *c == b'$' {
+				escape = true;
+			}
+			false
+		}).unwrap_or(src.len());
 	let (ident, rest) = src.split_at(ident_end);
 	*src = rest;
 	if ident.is_empty() {

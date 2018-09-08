@@ -39,16 +39,48 @@ fn expand_var_to<S: VarScope>(var_name: &str, scope: &S, result: &mut String, pr
 	}
 }
 
-fn expand_str_to<S: VarScope>(value: &str, scope: &S, result: &mut String, prot: Option<&RecursionProtection>) {
-	for (i, mut part) in value.split('$').enumerate() {
-		if i > 0 {
-			// Right after a '$'-sign.
-			// TODO: Other $-escape sequences
-			let var = eat_identifier_str(&mut part).unwrap();
-			expand_var_to(var, scope, result, prot);
+fn expand_str_to<S: VarScope>(mut value: &str, scope: &S, result: &mut String, prot: Option<&RecursionProtection>) {
+	while let Some(i) = value.find('$') {
+		result.push_str(&value[..i]);
+		value = &value[i + 1 ..];
+		let mut chars = value.chars();
+		match chars.next() {
+			Some(':') => {
+				result.push_str(":");
+			}
+			Some(' ') => {
+				result.push_str(" ");
+			}
+			Some('\n') => {
+				result.push_str("\n");
+				while match chars.clone().next() {
+					Some(' ') | Some('\t') => true,
+					_ => false,
+				} {
+					chars.next();
+				}
+			}
+			Some('$') => {
+				result.push_str("$");
+			}
+			Some('{') => {
+				value = chars.as_str();
+				let var = eat_identifier_str(&mut value).unwrap(); // TODO: error handling
+				chars = value.chars();
+				if chars.next() != Some('}') {
+					panic!("Expected `}'.");
+				}
+				expand_var_to(var, scope, result, prot);
+			}
+			_ => {
+				let var = eat_identifier_str(&mut value).unwrap(); // TODO: error handling
+				chars = value.chars();
+				expand_var_to(var, scope, result, prot);
+			}
 		}
-		result.push_str(part);
+		value = chars.as_str();
 	}
+	result.push_str(value);
 }
 
 struct RecursionProtection<'a> {
