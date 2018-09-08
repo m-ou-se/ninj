@@ -2,7 +2,7 @@ use super::error::{ErrorWithLocation, ReadError};
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
 use super::parse::{Parser, Statement, Variable};
 use super::path::to_path;
-use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, Rule, Scope};
+use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, Rule, FileScope};
 use super::{BuildRule, BuildRuleCommand, Spec};
 use pile::Pile;
 use raw_string::RawStr;
@@ -19,10 +19,14 @@ fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> &'a RawStr {
 	RawStr::from_bytes(pile.add(bytes))
 }
 
+/// Read, parse, and resolve rules and variables in a `ninja.build` file.
+///
+/// Parses the file, including any included and subninja'd files, and resolves
+/// all rules and variables, resulting in a `Spec`.
 pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
 	let mut spec = Spec::new();
 	let pile = Pile::new();
-	let mut scope = Scope::new();
+	let mut scope = FileScope::new();
 	read_into(file_name, &pile, &mut spec, &mut scope)?;
 	Ok(spec)
 }
@@ -31,7 +35,7 @@ fn read_into<'a: 'p, 'p>(
 	file_name: &Path,
 	pile: &'a Pile<Vec<u8>>,
 	spec: &mut Spec,
-	scope: &mut Scope<'a, 'p>,
+	scope: &mut FileScope<'a, 'p>,
 ) -> Result<(), ErrorWithLocation<ReadError>> {
 	let source = read_bytes(file_name, &pile);
 

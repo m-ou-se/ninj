@@ -1,4 +1,4 @@
-use super::check::check_escapes;
+use super::expand::check_escapes;
 use super::error::ParseError;
 use raw_string::RawStr;
 use std::str::from_utf8_unchecked;

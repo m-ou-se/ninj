@@ -1,9 +1,12 @@
-use super::check::check_escapes;
+//! The parser.
+
+use super::expand::check_escapes;
 use super::eat::{eat_identifier, eat_path, eat_paths, eat_whitespace};
 use super::error::{ErrorWithLocation, Location, ParseError};
 use raw_string::RawStr;
 use std::path::Path;
 
+/// A `ninja.build` file parser.
 pub struct Parser<'a, 'b> {
 	file_name: &'b Path,
 	source: &'a RawStr,
@@ -11,21 +14,28 @@ pub struct Parser<'a, 'b> {
 	escaped_lines: i32,
 }
 
+/// A variable definition, with a name and an (unexpanded) definition.
 #[derive(Debug)]
 pub struct Variable<'a> {
 	pub name: &'a str,
 	pub value: &'a RawStr,
 }
 
+/// A statement in a `build.ninja` file.
 #[derive(Debug)]
 pub enum Statement<'a> {
+	/// A file-level variable definition.
 	Variable {
 		name: &'a str,
 		value: &'a RawStr,
 	},
+
+	/// A rule definition.
 	Rule {
 		name: &'a str,
 	},
+
+	/// A build definition.
 	Build {
 		rule_name: &'a str,
 		explicit_outputs: Vec<&'a RawStr>,
@@ -34,18 +44,27 @@ pub enum Statement<'a> {
 		implicit_deps: Vec<&'a RawStr>,
 		order_deps: Vec<&'a RawStr>,
 	},
+
+	/// A default target declaration.
 	Default {
 		paths: Vec<&'a RawStr>,
 	},
+
+	/// An include statement.
 	Include {
 		path: &'a RawStr,
 	},
+
+	/// A subninja statement.
 	SubNinja {
 		path: &'a RawStr,
 	},
 }
 
 impl<'a, 'b> Parser<'a, 'b> {
+	/// Create a new parser, to parse `source`.
+	///
+	/// The file name is only used in errors.
 	pub fn new(file_name: &'b Path, source: &'a RawStr) -> Self {
 		Parser {
 			file_name: file_name,
@@ -55,6 +74,9 @@ impl<'a, 'b> Parser<'a, 'b> {
 		}
 	}
 
+	/// The location of the last read line, statement, or variable.
+	///
+	/// Used for error reporting.
 	pub fn location(&self) -> Location<'b> {
 		Location {
 			file: self.file_name,
@@ -117,6 +139,10 @@ impl<'a, 'b> Parser<'a, 'b> {
 		Some(line)
 	}
 
+	/// Read an (indented) variable definition.
+	///
+	/// To be used (repeatedly) right after a `build` or `rule` statement.
+	/// Returns `None` when done.
 	pub fn next_variable(
 		&mut self,
 	) -> Result<Option<Variable<'a>>, ErrorWithLocation<ParseError>> {
@@ -137,6 +163,11 @@ impl<'a, 'b> Parser<'a, 'b> {
 		Ok(None)
 	}
 
+	/// Read the next statement in the file.
+	///
+	/// Does *not* read the variables underneath a `build` or `rule` statement.
+	/// That is a separate step, for which `next_variable` needs to be called
+	/// in a loop right after such a statement is read.
 	pub fn next_statement(
 		&mut self,
 	) -> Result<Option<Statement<'a>>, ErrorWithLocation<ParseError>> {

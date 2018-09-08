@@ -1,21 +1,67 @@
-use super::eat::eat_identifier;
-use super::error::ExpansionError;
+//! `$`-expansion.
+
+use super::eat::{eat_identifier, is_identifier_char};
+use super::error::{InvalidEscape, ExpansionError};
 use super::scope::{FoundVar, VarScope};
 use raw_string::{RawStr, RawString};
 
+/// Check if the given string contains only valid escape sequences.
+pub fn check_escapes(src: &RawStr) -> Result<(), InvalidEscape> {
+	let mut iter = src.iter();
+	while let Some(&c) = iter.next() {
+		if c == b'$' {
+			match iter.next() {
+				Some(b'\n') => (),
+				Some(b' ') => (),
+				Some(b':') => (),
+				Some(b'$') => (),
+				Some(&x) if is_identifier_char(x) => (),
+				Some(b'{') => {
+					while match iter.next() {
+						Some(&x) if is_identifier_char(x) => true,
+						Some(b'}') => false,
+						_ => return Err(InvalidEscape),
+					} {}
+				}
+				_ => return Err(InvalidEscape),
+			}
+		}
+	}
+	Ok(())
+}
+
+/// Expand a variable, such as `"description"`.
+///
+/// Note: Takes the variable name without the `$`.
+///
+/// Note: Does *not* check if the escape sequences (in any unexpanded
+/// variables) are valid. Invalid ones are ignored.
+///
+/// The parser uses `check_escapes` on all variable definitons it reads,
+/// so anything from the parser can be assumed to contain only valid escape sequences.
 pub fn expand_var<S: VarScope>(var_name: &str, scope: &S) -> Result<RawString, ExpansionError> {
 	let mut s = RawString::new();
 	expand_var_to(var_name, scope, &mut s, None)?;
 	Ok(s)
 }
 
-pub fn expand_str<S: VarScope>(value: &RawStr, scope: &S) -> Result<RawString, ExpansionError> {
+/// Expand a string containing variables and `$`-escapes.
+///
+/// Note: Does *not* check if the escape sequences (in both the given string,
+/// and in any unexpanded variables in scope) are valid. Invalid ones are
+/// ignored.
+///
+/// Use `check_escapes` to validate the escape sequences.
+///
+/// The parser uses `check_escapes` on all variable definitons it reads,
+/// so anything from the parser can be assumed to contain only valid escape sequences.
+pub fn expand_str<T: AsRef<RawStr>, S: VarScope>(value: T, scope: &S) -> Result<RawString, ExpansionError> {
 	let mut s = RawString::new();
-	expand_str_to(value, scope, &mut s, None)?;
+	expand_str_to(value.as_ref(), scope, &mut s, None)?;
 	Ok(s)
 }
 
-pub fn expand_strs<S: VarScope>(
+pub(super) fn expand_strs<S: VarScope>(
 	values: &[&RawStr],
 	scope: &S,
 ) -> Result<Vec<RawString>, ExpansionError> {
@@ -24,7 +70,7 @@ pub fn expand_strs<S: VarScope>(
 	Ok(vec)
 }
 
-pub fn expand_strs_into<S: VarScope>(
+pub(super) fn expand_strs_into<S: VarScope>(
 	values: &[&RawStr],
 	scope: &S,
 	vec: &mut Vec<RawString>,
@@ -114,13 +160,14 @@ fn expand_str_to<S: VarScope>(
 					}
 				}
 				Some(b'{') => {
-					value = RawStr::from_bytes(bytes.as_slice());
-					let var = eat_identifier(&mut value).unwrap_or("");
+					let mut x = RawStr::from_bytes(bytes.as_slice());
 					bytes = value.iter();
-					if bytes.next() == Some(&b'}') {
-						expand_var_to(var, scope, result, prot)?;
-					} else {
-						unreachable!("Expanding '${' without '}', but `check_escapes` should have prevented this");
+					if let Some(var) = eat_identifier(&mut x) {
+						let mut x = x.iter();
+						if x.next() == Some(&b'}') {
+							expand_var_to(var, scope, result, prot)?;
+							bytes = x;
+						}
 					}
 				}
 				Some(&x) => result.push(x),
