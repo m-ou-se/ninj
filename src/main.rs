@@ -6,5 +6,11 @@ mod spec;
 use spec::read;
 
 fn main() {
-	println!("spec: {:#?}", read("build.ninja".as_ref()));
+	match read("build.ninja".as_ref()) {
+		Ok(result) => println!("spec: {:#?}", result),
+		Err(error) => {
+			println!("{:#?}", error);
+			println!("{}", error);
+		}
+	}
 }

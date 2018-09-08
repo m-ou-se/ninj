@@ -1,4 +1,6 @@
+mod check;
 mod eat;
+mod error;
 mod expand;
 mod parse;
 mod read;
