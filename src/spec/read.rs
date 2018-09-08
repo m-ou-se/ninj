@@ -77,8 +77,10 @@ pub fn read_into<'a: 'p, 'p>(
 				let make_error = |e| location.make_error(e);
 
 				// And expand the input and output paths with it.
-				let mut outputs = expand_strs(&explicit_outputs, &build_scope).map_err(make_error)?;
-				let mut inputs = expand_strs(&explicit_deps, &build_scope).map_err(make_error)?;
+				let mut outputs = Vec::with_capacity(explicit_outputs.len() + implicit_outputs.len());
+				let mut inputs = Vec::with_capacity(explicit_deps.len() + implicit_deps.len());
+				expand_strs_into(&explicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
+				expand_strs_into(&explicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
 
 				let command = if rule_name == "phony" {
 					BuildRuleCommand::Phony
