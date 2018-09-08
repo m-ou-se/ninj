@@ -1,10 +1,29 @@
 use std;
 
 #[derive(Debug)]
+pub struct Location<'a> {
+	pub file: &'a std::path::Path,
+	pub line: i32,
+}
+
+#[derive(Debug)]
 pub struct ErrorWithLocation<T> {
 	pub file: String,
 	pub line: i32,
 	pub error: T,
+}
+
+impl<'a> Location<'a> {
+	pub fn make_error<E>(&self, error: E) -> ErrorWithLocation<E> {
+		ErrorWithLocation {
+			file: self.file.to_string_lossy().into_owned(),
+			line: self.line,
+			error,
+		}
+	}
+	pub fn map_error<T, E>(&self, result: Result<T, E>) -> Result<T, ErrorWithLocation<E>> {
+		result.map_err(|e| self.make_error(e))
+	}
 }
 
 impl<T: std::fmt::Display> std::fmt::Display for ErrorWithLocation<T> {
@@ -115,3 +134,8 @@ impl From<ErrorWithLocation<ParseError>> for ErrorWithLocation<ReadError> {
 	}
 }
 
+impl From<ErrorWithLocation<ExpansionError>> for ErrorWithLocation<ReadError> {
+	fn from(src: ErrorWithLocation<ExpansionError>) -> Self {
+		src.convert()
+	}
+}

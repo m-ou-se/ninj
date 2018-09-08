@@ -1,9 +1,19 @@
-use super::types::{Rule, Var};
+#[derive(Debug)]
+pub struct Var<'a> {
+	pub name: &'a str,
+	pub value: &'a str,
+}
 
 #[derive(Debug)]
 pub struct ExpandedVar<'a> {
 	pub name: &'a str,
 	pub value: String,
+}
+
+#[derive(Debug)]
+pub struct Rule<'a> {
+	pub name: &'a str,
+	pub vars: Vec<Var<'a>>,
 }
 
 #[derive(Debug)]
@@ -16,7 +26,7 @@ pub struct Scope<'a: 'p, 'p> {
 #[derive(Debug)]
 pub struct BuildScope<'a> {
 	pub file_scope: &'a Scope<'a, 'a>,
-	pub build_vars: &'a [Var<'a>],
+	pub build_vars: &'a [ExpandedVar<'a>],
 }
 
 #[derive(Debug)]
@@ -64,8 +74,9 @@ impl<'a, 'p> VarScope for Scope<'a, 'p> {
 
 impl<'a> VarScope for BuildScope<'a> {
 	fn lookup_var(&self, var_name: &str) -> Option<FoundVar> {
-		self.build_vars.lookup_var(var_name)
-				.or_else(|| self.file_scope.lookup_var(var_name))
+		self.build_vars
+			.lookup_var(var_name)
+			.or_else(|| self.file_scope.lookup_var(var_name))
 	}
 }
 
@@ -76,11 +87,14 @@ impl<'a> VarScope for BuildRuleScope<'a> {
 		} else if var_name == "out" {
 			Some(FoundVar::Paths(self.outputs))
 		} else {
-			self.build_scope.build_vars.lookup_var(var_name).or_else(|| {
-				self.rule_vars
-					.lookup_var(var_name)
-					.or_else(|| self.build_scope.file_scope.lookup_var(var_name))
-			})
+			self.build_scope
+				.build_vars
+				.lookup_var(var_name)
+				.or_else(|| {
+					self.rule_vars
+						.lookup_var(var_name)
+						.or_else(|| self.build_scope.file_scope.lookup_var(var_name))
+				})
 		}
 	}
 }

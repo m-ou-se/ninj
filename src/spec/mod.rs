@@ -5,12 +5,10 @@ mod expand;
 mod parse;
 mod read;
 mod scope;
-mod types;
 
 pub use self::parse::{Parser, Statement};
 pub use self::read::{read, read_into};
 pub use self::scope::{Scope, BuildScope, BuildRuleScope, ExpandedVar, VarScope};
-pub use self::types::{Build, Rule, Var};
 
 #[derive(Debug)]
 pub struct Spec {
