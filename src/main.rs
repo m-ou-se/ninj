@@ -1,9 +1,8 @@
-extern crate pile;
+extern crate ninj;
 
 use std::convert::AsRef;
 
-mod spec;
-use spec::read;
+use ninj::spec::read;
 
 fn main() {
 	match read("build.ninja".as_ref()) {

@@ -1,7 +1,8 @@
 use super::eat::is_identifier_char;
 use super::error::ParseError;
+use raw_string::RawStr;
 
-pub fn check_escapes(src: &[u8]) -> Result<(), ParseError> {
+pub fn check_escapes(src: &RawStr) -> Result<(), ParseError> {
 	let mut iter = src.iter();
 	while let Some(&c) = iter.next() {
 		if c == b'$' {

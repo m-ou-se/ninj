@@ -1,39 +1,55 @@
-use std::path::Path;
-use std::str::from_utf8;
 use super::check::check_escapes;
 use super::eat::{eat_identifier, eat_path, eat_paths, eat_whitespace};
-use super::error::{Location, ParseError, ErrorWithLocation};
+use super::error::{ErrorWithLocation, Location, ParseError};
+use raw_string::RawStr;
+use std::path::Path;
 
 pub struct Parser<'a, 'b> {
 	file_name: &'b Path,
-	source: &'a [u8],
+	source: &'a RawStr,
 	line_num: i32,
 	escaped_lines: i32,
 }
 
-// TODO: Use OsStr for paths and values?
+#[derive(Debug)]
+pub struct Variable<'a> {
+	pub name: &'a str,
+	pub value: &'a RawStr,
+}
+
 #[derive(Debug)]
 pub enum Statement<'a> {
-	Variable { name: &'a str, value: &'a str },
-	Rule { name: &'a str},
+	Variable {
+		name: &'a str,
+		value: &'a RawStr,
+	},
+	Rule {
+		name: &'a str,
+	},
 	Build {
 		rule_name: &'a str,
-		explicit_outputs: Vec<&'a str>,
-		implicit_outputs: Vec<&'a str>,
-		explicit_deps: Vec<&'a str>,
-		implicit_deps: Vec<&'a str>,
-		order_deps: Vec<&'a str>,
+		explicit_outputs: Vec<&'a RawStr>,
+		implicit_outputs: Vec<&'a RawStr>,
+		explicit_deps: Vec<&'a RawStr>,
+		implicit_deps: Vec<&'a RawStr>,
+		order_deps: Vec<&'a RawStr>,
 	},
-	Default { paths: Vec<&'a str> },
-	Include { path: &'a str },
-	SubNinja { path: &'a str },
+	Default {
+		paths: Vec<&'a RawStr>,
+	},
+	Include {
+		path: &'a RawStr,
+	},
+	SubNinja {
+		path: &'a RawStr,
+	},
 }
 
 impl<'a, 'b> Parser<'a, 'b> {
-	pub fn new(file_name: &'b Path, source: &'a [u8]) -> Self {
+	pub fn new(file_name: &'b Path, source: &'a RawStr) -> Self {
 		Parser {
-			file_name,
-			source,
+			file_name: file_name,
+			source: source,
 			line_num: 0,
 			escaped_lines: 0,
 		}
@@ -53,7 +69,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 	fn next_indent(&mut self) -> i32 {
 		loop {
 			let indent = eat_whitespace(&mut self.source);
-			if self.source.starts_with(b"#") {
+			if self.source.starts_with("#") {
 				// Ignore comment line.
 				let next_line_pos = self
 					.source
@@ -69,7 +85,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 	}
 
 	/// Returns the next line, including any $\n escape sequences.
-	fn next_line(&mut self) -> Option<&'a [u8]> {
+	fn next_line(&mut self) -> Option<&'a RawStr> {
 		self.line_num += self.escaped_lines;
 		self.escaped_lines = 0;
 
@@ -101,8 +117,9 @@ impl<'a, 'b> Parser<'a, 'b> {
 		Some(line)
 	}
 
-	// TODO: Values as [u8] ?
-	pub fn next_variable(&mut self) -> Result<Option<(&'a str, &'a str)>, ErrorWithLocation<ParseError>> {
+	pub fn next_variable(
+		&mut self,
+	) -> Result<Option<Variable<'a>>, ErrorWithLocation<ParseError>> {
 		if self.next_indent() > 0 {
 			if let Some(mut line) = self.next_line() {
 				let name = eat_identifier(&mut line)
@@ -111,17 +128,18 @@ impl<'a, 'b> Parser<'a, 'b> {
 				if let Some((b'=', mut value)) = line.split_first() {
 					eat_whitespace(&mut value);
 					check_escapes(value).map_err(|e| self.location().make_error(e))?;
-					let value = from_utf8(value).unwrap(); // TODO: error handling
-					return Ok(Some((name, value)))
+					return Ok(Some(Variable { name, value }));
 				} else {
-					return Err(self.location().make_error(ParseError::ExpectedVarDef))
+					return Err(self.location().make_error(ParseError::ExpectedVarDef));
 				}
 			}
 		}
 		Ok(None)
 	}
 
-	pub fn next_statement(&mut self) -> Result<Option<Statement<'a>>, ErrorWithLocation<ParseError>> {
+	pub fn next_statement(
+		&mut self,
+	) -> Result<Option<Statement<'a>>, ErrorWithLocation<ParseError>> {
 		let mut line = loop {
 			if self.next_indent() != 0 {
 				return Err(self.location().make_error(ParseError::UnexpectedIndent));
@@ -164,13 +182,13 @@ impl<'a, 'b> Parser<'a, 'b> {
 
 				eat_whitespace(&mut line);
 				let (explicit_deps, x) = loc.map_error(eat_paths(&mut line, b"|"))?;
-				let (implicit_deps, x) = if x == Some(b'|') && !line.starts_with(b"|") {
+				let (implicit_deps, x) = if x == Some(b'|') && !line.starts_with("|") {
 					eat_whitespace(&mut line);
 					loc.map_error(eat_paths(&mut line, b"|"))?
 				} else {
 					(Vec::new(), x)
 				};
-				let mut order_deps = if x == Some(b'|') && line.starts_with(b"|") {
+				let mut order_deps = if x == Some(b'|') && line.starts_with("|") {
 					line = &line[1..];
 					eat_whitespace(&mut line);
 					loc.map_error(eat_paths(&mut line, b""))?.0
@@ -222,7 +240,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 					eat_whitespace(&mut value);
 					Statement::Variable {
 						name: var_name,
-						value: from_utf8(value).unwrap(), // TODO: error handling
+						value,
 					}
 				} else {
 					return Err(loc.make_error(ParseError::ExpectedStatement));

@@ -1,13 +1,11 @@
-#[derive(Debug)]
-pub struct Var<'a> {
-	pub name: &'a str,
-	pub value: &'a str,
-}
+use raw_string::{RawStr, RawString};
+
+use super::parse::Variable as Var;
 
 #[derive(Debug)]
 pub struct ExpandedVar<'a> {
 	pub name: &'a str,
-	pub value: String,
+	pub value: RawString,
 }
 
 #[derive(Debug)]
@@ -33,14 +31,14 @@ pub struct BuildScope<'a> {
 pub struct BuildRuleScope<'a> {
 	pub build_scope: &'a BuildScope<'a>,
 	pub rule_vars: &'a [Var<'a>],
-	pub inputs: &'a [String],
-	pub outputs: &'a [String],
+	pub inputs: &'a [RawString],
+	pub outputs: &'a [RawString],
 }
 
 pub enum FoundVar<'a> {
-	Expanded(&'a str),
-	Unexpanded(&'a str),
-	Paths(&'a [String]),
+	Expanded(&'a RawStr),
+	Unexpanded(&'a RawStr),
+	Paths(&'a [RawString]),
 }
 
 pub trait VarScope {

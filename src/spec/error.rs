@@ -36,7 +36,7 @@ impl<T: std::fmt::Display + std::fmt::Debug> std::error::Error for ErrorWithLoca
 
 impl<A> ErrorWithLocation<A> {
 	pub fn convert<B: From<A>>(self) -> ErrorWithLocation<B> {
-		ErrorWithLocation{
+		ErrorWithLocation {
 			file: self.file,
 			line: self.line,
 			error: From::from(self.error),
@@ -60,17 +60,23 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		use self::ParseError::*;
-		write!(f, "{}", match self {
-			ExpectedStatement => "Expected `build', `rule', `default', `include', `subninja', or `var = value'",
-			ExpectedVarDef => "Expected `var = value'",
-			UnexpectedIndent => "Unexpected indent",
-			InvalidUtf8 => "Invalid UTF-8 sequence",
-			ExpectedPath => "Missing path",
-			ExpectedColon => "Missing `:'",
-			ExpectedRuleName => "Missing rule name",
-			ExpectedEndOfLine => "Garbage at end of line",
-			InvalidEscape => "Invalid $-escape (literal `$' is written as `$$')",
-		})
+		write!(
+			f,
+			"{}",
+			match self {
+				ExpectedStatement => {
+					"Expected `build', `rule', `default', `include', `subninja', or `var = value'"
+				}
+				ExpectedVarDef => "Expected `var = value'",
+				UnexpectedIndent => "Unexpected indent",
+				InvalidUtf8 => "Invalid UTF-8 sequence",
+				ExpectedPath => "Missing path",
+				ExpectedColon => "Missing `:'",
+				ExpectedRuleName => "Missing rule name",
+				ExpectedEndOfLine => "Garbage at end of line",
+				InvalidEscape => "Invalid $-escape (literal `$' is written as `$$')",
+			}
+		)
 	}
 }
 
@@ -122,6 +128,12 @@ impl From<ParseError> for ReadError {
 	}
 }
 
+impl From<std::str::Utf8Error> for ReadError {
+	fn from(src: std::str::Utf8Error) -> ReadError {
+		ReadError::ParseError(src.into())
+	}
+}
+
 impl From<ExpansionError> for ReadError {
 	fn from(src: ExpansionError) -> ReadError {
 		ReadError::ExpansionError(src)
@@ -136,6 +148,12 @@ impl From<ErrorWithLocation<ParseError>> for ErrorWithLocation<ReadError> {
 
 impl From<ErrorWithLocation<ExpansionError>> for ErrorWithLocation<ReadError> {
 	fn from(src: ErrorWithLocation<ExpansionError>) -> Self {
+		src.convert()
+	}
+}
+
+impl From<ErrorWithLocation<std::str::Utf8Error>> for ErrorWithLocation<ReadError> {
+	fn from(src: ErrorWithLocation<std::str::Utf8Error>) -> Self {
 		src.convert()
 	}
 }

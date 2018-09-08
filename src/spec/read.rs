@@ -1,22 +1,22 @@
 use super::error::{ErrorWithLocation, ReadError};
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
-use super::{
-	BuildRule, BuildRuleCommand, Parser, Spec,
-	Statement,
-};
-use super::scope::{Var, ExpandedVar, Scope, BuildRuleScope, Rule, BuildScope};
+use super::parse::{Parser, Statement, Variable};
+use super::path::to_path;
+use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, Rule, Scope};
+use super::{BuildRule, BuildRuleCommand, Spec};
 use pile::Pile;
+use raw_string::RawStr;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> &'a [u8] {
+fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> &'a RawStr {
 	let mut bytes = Vec::new();
 	File::open(file_name)
 		.unwrap()
 		.read_to_end(&mut bytes)
 		.unwrap(); // TODO: error handling
-	pile.add(bytes)
+	RawStr::from_bytes(pile.add(bytes))
 }
 
 pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
@@ -27,7 +27,7 @@ pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
 	Ok(spec)
 }
 
-pub fn read_into<'a: 'p, 'p>(
+fn read_into<'a: 'p, 'p>(
 	file_name: &Path,
 	pile: &'a Pile<Vec<u8>>,
 	spec: &mut Spec,
@@ -39,14 +39,14 @@ pub fn read_into<'a: 'p, 'p>(
 
 	while let Some(statement) = parser.next_statement()? {
 		match statement {
-			Statement::Variable { name, value} => {
+			Statement::Variable { name, value } => {
 				let value = parser.location().map_error(expand_str(value, scope))?;
-				scope.vars.push(ExpandedVar { name, value, })
+				scope.vars.push(ExpandedVar { name, value })
 			}
 			Statement::Rule { name } => {
 				let mut vars = Vec::new();
-				while let Some((name, value)) = parser.next_variable()? {
-					vars.push(Var { name, value });
+				while let Some(var) = parser.next_variable()? {
+					vars.push(var);
 				}
 				scope.rules.push(Rule { name, vars })
 			}
@@ -61,7 +61,7 @@ pub fn read_into<'a: 'p, 'p>(
 				let location = parser.location();
 
 				let mut vars = Vec::new();
-				while let Some((name, value)) = parser.next_variable()? {
+				while let Some(Variable { name, value }) = parser.next_variable()? {
 					vars.push(ExpandedVar {
 						name,
 						value: parser.location().map_error(expand_str(value, scope))?,
@@ -77,18 +77,20 @@ pub fn read_into<'a: 'p, 'p>(
 				let make_error = |e| location.make_error(e);
 
 				// And expand the input and output paths with it.
-				let mut outputs = Vec::with_capacity(explicit_outputs.len() + implicit_outputs.len());
+				let mut outputs =
+					Vec::with_capacity(explicit_outputs.len() + implicit_outputs.len());
 				let mut inputs = Vec::with_capacity(explicit_deps.len() + implicit_deps.len());
-				expand_strs_into(&explicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
+				expand_strs_into(&explicit_outputs, &build_scope, &mut outputs)
+					.map_err(make_error)?;
 				expand_strs_into(&explicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
 
 				let command = if rule_name == "phony" {
 					BuildRuleCommand::Phony
 				} else {
 					// Look up the rule in the current scope.
-					let rule = scope
-						.lookup_rule(rule_name)
-						.ok_or_else(|| location.make_error(ReadError::UndefinedRule(rule_name.to_string())))?;
+					let rule = scope.lookup_rule(rule_name).ok_or_else(|| {
+						location.make_error(ReadError::UndefinedRule(rule_name.to_string()))
+					})?;
 
 					// Bring $in, $out, and the rule variables into scope.
 					let build_rule_scope = BuildRuleScope {
@@ -101,38 +103,47 @@ pub fn read_into<'a: 'p, 'p>(
 					// And expand the command and description with it.
 					BuildRuleCommand::Command {
 						command: expand_var("command", &build_rule_scope).map_err(make_error)?,
-						description: expand_var("description", &build_rule_scope).map_err(make_error)?,
+						description: expand_var("description", &build_rule_scope)
+							.map_err(make_error)?,
 					}
 				};
 
-				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
+				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs)
+					.map_err(make_error)?;
 				expand_strs_into(&implicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
+
+				let order_deps = expand_strs(&order_deps, &build_scope).map_err(make_error)?;
 
 				spec.build_rules.push(BuildRule {
 					outputs,
 					inputs,
-					order_deps: expand_strs(&order_deps, &build_scope).map_err(make_error)?,
+					order_deps,
 					command,
 				});
 			}
 			Statement::Default { paths } => {
-				parser.location().map_error(expand_strs_into(&paths, scope, &mut spec.default_targets))?;
+				parser.location().map_error(expand_strs_into(
+					&paths,
+					scope,
+					&mut spec.default_targets,
+				))?;
 			}
 			Statement::Include { path } => {
-				let path = file_name
-					.parent()
-					.unwrap_or("".as_ref())
-					.join(parser.location().map_error(expand_str(path, scope))?);
-				read_into(&path, &pile, spec, scope)?;
+				let path = parser.location().map_error(expand_str(path, scope))?;
+				let path = parser.location().map_error(to_path(&path))?;
+				read_into(&file_name.with_file_name(path), &pile, spec, scope)?;
 			}
 			Statement::SubNinja { path } => {
-				let path = file_name
-					.parent()
-					.unwrap_or("".as_ref())
-					.join(parser.location().map_error(expand_str(path, scope))?);
+				let path = parser.location().map_error(expand_str(path, scope))?;
+				let path = parser.location().map_error(to_path(&path))?;
 				let subpile = Pile::new();
 				let mut subscope = scope.new_subscope();
-				read_into(&path, &subpile, spec, &mut subscope)?;
+				read_into(
+					&file_name.with_file_name(path),
+					&subpile,
+					spec,
+					&mut subscope,
+				)?;
 			}
 		}
 	}

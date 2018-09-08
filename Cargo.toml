@@ -5,3 +5,4 @@ authors = ["Mara Bos <m-ou.se@m-ou.se>"]
 
 [dependencies]
 pile = "0.1"
+raw-string = "0.2.3"
