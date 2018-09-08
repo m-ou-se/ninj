@@ -49,10 +49,20 @@ pub fn eat_identifier_str<'a>(src: &mut &'a str) -> Option<&'a str> {
 
 pub fn eat_path<'a>(src: &mut &'a [u8]) -> Result<&'a str, ParseError> {
 	let mut escape = false;
+	let mut newline = false;
 	let ident_end = src
 		.iter()
 		.position(|c| {
+			if newline {
+				match c {
+					b' ' | b'\t' => return false,
+					_ => newline = false,
+				}
+			}
 			if escape {
+				if *c == b'\n' {
+					newline = true;
+				}
 				escape = false;
 			} else if b" :|".contains(c) {
 				return true

@@ -81,7 +81,6 @@ fn expand_str_to<S: VarScope>(
 			let mut chars = value.chars();
 			match chars.next() {
 				Some('\n') => {
-					result.push_str("\n");
 					while match chars.clone().next() {
 						Some(' ') | Some('\t') => true,
 						_ => false,
