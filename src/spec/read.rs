@@ -109,8 +109,8 @@ pub fn read_into<'a: 'p, 'p>(
 				expand_strs_into(&implicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
 
 				spec.build_rules.push(BuildRule {
-					outputs: outputs,
-					deps: inputs,
+					outputs,
+					inputs,
 					order_deps: expand_strs(&order_deps, &build_scope).map_err(make_error)?,
 					command,
 				});

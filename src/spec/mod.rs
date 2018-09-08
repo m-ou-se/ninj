@@ -19,7 +19,7 @@ pub struct Spec {
 #[derive(Debug)]
 pub struct BuildRule {
 	outputs: Vec<String>,
-	deps: Vec<String>,
+	inputs: Vec<String>,
 	order_deps: Vec<String>,
 	command: BuildRuleCommand,
 }
