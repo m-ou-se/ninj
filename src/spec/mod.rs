@@ -49,14 +49,12 @@ pub enum BuildRuleCommand {
 		command: RawString,
 		/// The description to be shown to the user.
 		description: RawString,
-		/* TODO:
-		depfile: String,
-		deps: DepStyle
+		depfile: RawString,
+		deps: Option<DepStyle>,
 		generator: bool,
 		restat: bool,
-		rspfile: String,
-		rspfile_content: String,
-		*/
+		rspfile: RawString,
+		rspfile_content: RawString,
 	},
 }
 

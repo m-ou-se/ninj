@@ -2,8 +2,8 @@ use super::error::{ErrorWithLocation, ReadError};
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
 use super::parse::{Parser, Statement, Variable};
 use super::path::to_path;
-use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, Rule, FileScope};
-use super::{BuildRule, BuildRuleCommand, Spec};
+use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, Rule, FileScope, VarScope};
+use super::{BuildRule, BuildRuleCommand, Spec, DepStyle};
 use pile::Pile;
 use raw_string::RawStr;
 use std::fs::File;
@@ -104,11 +104,22 @@ fn read_into<'a: 'p, 'p>(
 						outputs: &outputs,
 					};
 
-					// And expand the command and description with it.
+					let expand_var = |name| expand_var(name, &build_rule_scope).map_err(make_error);
+
+					// And expand the special variables with it:
 					BuildRuleCommand::Command {
-						command: expand_var("command", &build_rule_scope).map_err(make_error)?,
-						description: expand_var("description", &build_rule_scope)
-							.map_err(make_error)?,
+						command: expand_var("command")?,
+						description: expand_var("description")?,
+						depfile: expand_var("depfile")?,
+						deps: match expand_var("deps")?.as_bytes() {
+							b"gcc" => Some(DepStyle::Gcc),
+							b"msvc" => Some(DepStyle::Msvc),
+							_ => None,
+						},
+						generator: build_rule_scope.lookup_var("generator").is_some(),
+						restat: build_rule_scope.lookup_var("restat").is_some(),
+						rspfile: expand_var("rspfile")?,
+						rspfile_content: expand_var("rspfile")?,
 					}
 				};
 
