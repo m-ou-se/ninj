@@ -57,6 +57,9 @@ fn read_into<'a: 'p, 'p>(
 				scope.vars.push(ExpandedVar { name, value })
 			}
 			Statement::Rule { name } => {
+				if scope.rules.iter().find(|rule| rule.name == name).is_some() {
+					return Err(parser.location().make_error(ReadError::DuplicateRule(name.to_string())));
+				}
 				let mut vars = Vec::new();
 				while let Some(var) = parser.next_variable()? {
 					vars.push(var);

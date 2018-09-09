@@ -155,6 +155,8 @@ pub enum ReadError {
 	/// A `build` definition refers to a `pool` which doesn't exist.
 	UndefinedPool(RawString),
 	/// A pool with this name was already defined.
+	DuplicateRule(String),
+	/// A pool with this name was already defined.
 	DuplicatePool(String),
 	/// The depth value of a `pool` is not a valid value.
 	InvalidPoolDepth,
@@ -177,6 +179,7 @@ impl std::fmt::Display for ReadError {
 			ReadError::ParseError(e) => write!(f, "{}", e),
 			ReadError::UndefinedRule(n) => write!(f, "Undefined rule name: {}", n),
 			ReadError::UndefinedPool(n) => write!(f, "Undefined pool name: {}", n),
+			ReadError::DuplicateRule(n) => write!(f, "Duplicate rule: {}", n),
 			ReadError::DuplicatePool(n) => write!(f, "Duplicate pool: {}", n),
 			ReadError::InvalidPoolDepth => write!(f, "Invalid pool depth"),
 			ReadError::ExpectedPoolDepth => write!(f, "Missing `depth =' line"),
