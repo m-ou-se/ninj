@@ -1,5 +1,5 @@
-use super::expand::check_escapes;
 use super::error::ParseError;
+use super::expand::check_escapes;
 use raw_string::RawStr;
 use std::str::from_utf8_unchecked;
 

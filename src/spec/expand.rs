@@ -55,7 +55,10 @@ pub fn expand_var<S: VarScope>(var_name: &str, scope: &S) -> Result<RawString, E
 ///
 /// The parser uses `check_escapes` on all variable definitons it reads,
 /// so anything from the parser can be assumed to contain only valid escape sequences.
-pub fn expand_str<T: AsRef<RawStr>, S: VarScope>(value: T, scope: &S) -> Result<RawString, ExpansionError> {
+pub fn expand_str<T: AsRef<RawStr>, S: VarScope>(
+	value: T,
+	scope: &S,
+) -> Result<RawString, ExpansionError> {
 	let mut s = RawString::new();
 	expand_str_to(value.as_ref(), scope, &mut s, None)?;
 	Ok(s)

@@ -14,9 +14,12 @@ use std::str::from_utf8;
 
 fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawStr, ReadError> {
 	let mut bytes = Vec::new();
-	File::open(file_name).and_then(|mut f| f.read_to_end(&mut bytes)).map_err(|error| {
-		ReadError::IoError { file_name: file_name.to_owned(), error }
-	})?;
+	File::open(file_name)
+		.and_then(|mut f| f.read_to_end(&mut bytes))
+		.map_err(|error| ReadError::IoError {
+			file_name: file_name.to_owned(),
+			error,
+		})?;
 	Ok(RawStr::from_bytes(pile.add(bytes)))
 }
 
@@ -26,12 +29,10 @@ fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawSt
 /// all rules and variables, resulting in a `Spec`.
 pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
 	let pile = Pile::new();
-	let source = read_bytes(file_name, &pile).map_err(|error| {
-		ErrorWithLocation {
-			file: String::new(),
-			line: 0,
-			error,
-		}
+	let source = read_bytes(file_name, &pile).map_err(|error| ErrorWithLocation {
+		file: String::new(),
+		line: 0,
+		error,
 	})?;
 	let mut spec = Spec::new();
 	let mut scope = FileScope::new();
@@ -57,8 +58,10 @@ fn read_into<'a: 'p, 'p>(
 				scope.vars.push(ExpandedVar { name, value })
 			}
 			Statement::Rule { name } => {
-				if scope.rules.iter().find(|rule| rule.name == name).is_some() {
-					return Err(parser.location().make_error(ReadError::DuplicateRule(name.to_string())));
+				if scope.rules.iter().any(|rule| rule.name == name) {
+					return Err(parser
+						.location()
+						.make_error(ReadError::DuplicateRule(name.to_string())));
 				}
 				let mut vars = Vec::new();
 				while let Some(var) = parser.next_variable()? {
@@ -76,8 +79,10 @@ fn read_into<'a: 'p, 'p>(
 				scope.rules.push(Rule { name, vars })
 			}
 			Statement::Pool { name } => {
-				if pools.iter().find(|(n, _)| n == name).is_some() {
-					return Err(parser.location().make_error(ReadError::DuplicatePool(name.to_string())));
+				if pools.iter().any(|(n, _)| n == name) {
+					return Err(parser
+						.location()
+						.make_error(ReadError::DuplicatePool(name.to_string())));
 				}
 				let mut depth = None;
 				while let Some(Variable { name, value }) = parser.next_variable()? {
@@ -88,9 +93,12 @@ fn read_into<'a: 'p, 'p>(
 					// Expand the value.
 					let value = loc.map_error(expand_str(value, scope))?;
 					// Parse the value as an u32.
-					depth = Some(from_utf8(value.as_bytes()).ok().and_then(|s| s.parse().ok()).ok_or_else(|| {
-						loc.make_error(ReadError::InvalidPoolDepth)
-					})?);
+					depth = Some(
+						from_utf8(value.as_bytes())
+							.ok()
+							.and_then(|s| s.parse().ok())
+							.ok_or_else(|| loc.make_error(ReadError::InvalidPoolDepth))?,
+					);
 				}
 				if let Some(depth) = depth {
 					pools.push((name.to_owned(), depth));
@@ -157,9 +165,14 @@ fn read_into<'a: 'p, 'p>(
 					let pool_depth = if pool.is_empty() {
 						None
 					} else {
-						Some(pools.iter().find(|(name, _)| name.as_bytes() == pool.as_bytes()).ok_or_else(|| {
-							location.make_error(ReadError::UndefinedPool(pool.to_owned()))
-						})?.1)
+						Some(
+							pools
+								.iter()
+								.find(|(name, _)| name.as_bytes() == pool.as_bytes())
+								.ok_or_else(|| {
+									location.make_error(ReadError::UndefinedPool(pool.to_owned()))
+								})?.1,
+						)
 					};
 
 					// And then the rest:
@@ -207,7 +220,14 @@ fn read_into<'a: 'p, 'p>(
 				let path = loc.map_error(expand_str(path, scope))?;
 				let path = loc.map_error(to_path(&path))?;
 				let source = loc.map_error(read_bytes(path, &pile))?;
-				read_into(&file_name.with_file_name(path), &source, &pile, spec, scope, pools)?;
+				read_into(
+					&file_name.with_file_name(path),
+					&source,
+					&pile,
+					spec,
+					scope,
+					pools,
+				)?;
 			}
 			Statement::SubNinja { path } => {
 				let loc = parser.location();
