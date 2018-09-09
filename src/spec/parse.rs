@@ -232,7 +232,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 			}
 			"rule" => {
 				let name = eat_identifier(&mut line)
-					.ok_or_else(|| loc.make_error(ParseError::ExpectedRuleName))?;
+					.ok_or_else(|| loc.make_error(ParseError::ExpectedName))?;
 				if !line.is_empty() {
 					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
 				}
