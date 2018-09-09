@@ -1,15 +1,16 @@
 use super::error::{ErrorWithLocation, ReadError};
-use std::borrow::ToOwned;
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
 use super::parse::{Parser, Statement, Variable};
 use super::path::to_path;
-use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, Rule, FileScope, VarScope};
-use super::{BuildRule, BuildRuleCommand, Spec, DepStyle};
+use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, FileScope, Rule, VarScope};
+use super::{BuildRule, BuildRuleCommand, DepStyle, Spec};
 use pile::Pile;
 use raw_string::RawStr;
+use std::borrow::ToOwned;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::str::from_utf8;
 
 fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawStr, ReadError> {
 	let mut bytes = Vec::new();
@@ -34,7 +35,8 @@ pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
 	})?;
 	let mut spec = Spec::new();
 	let mut scope = FileScope::new();
-	read_into(file_name, &source, &pile, &mut spec, &mut scope)?;
+	let mut pools = Vec::new();
+	read_into(file_name, &source, &pile, &mut spec, &mut scope, &mut pools)?;
 	Ok(spec)
 }
 
@@ -44,6 +46,7 @@ fn read_into<'a: 'p, 'p>(
 	pile: &'a Pile<Vec<u8>>,
 	spec: &mut Spec,
 	scope: &mut FileScope<'a, 'p>,
+	pools: &mut Vec<(String, u16)>,
 ) -> Result<(), ErrorWithLocation<ReadError>> {
 	let mut parser = Parser::new(file_name, source);
 
@@ -59,6 +62,29 @@ fn read_into<'a: 'p, 'p>(
 					vars.push(var);
 				}
 				scope.rules.push(Rule { name, vars })
+			}
+			Statement::Pool { name } => {
+				if pools.iter().find(|(n, _)| n == name).is_some() {
+					return Err(parser.location().make_error(ReadError::DuplicatePool(name.to_string())));
+				}
+				let mut depth = None;
+				while let Some(Variable { name, value }) = parser.next_variable()? {
+					let loc = parser.location();
+					if name != "depth" {
+						return Err(loc.make_error(ReadError::UnknownVariable(name.to_string())));
+					}
+					// Expand the value.
+					let value = loc.map_error(expand_str(value, scope))?;
+					// Parse the value as an u32.
+					depth = Some(from_utf8(value.as_bytes()).ok().and_then(|s| s.parse().ok()).ok_or_else(|| {
+						loc.make_error(ReadError::InvalidPoolDepth)
+					})?);
+				}
+				if let Some(depth) = depth {
+					pools.push((name.to_owned(), depth));
+				} else {
+					return Err(parser.location().make_error(ReadError::ExpectedPoolDepth));
+				}
 			}
 			Statement::Build {
 				rule_name,
@@ -113,6 +139,18 @@ fn read_into<'a: 'p, 'p>(
 					let expand_var = |name| expand_var(name, &build_rule_scope).map_err(make_error);
 
 					// And expand the special variables with it:
+
+					// First the pool, so we can look it up:
+					let pool = expand_var("pool")?;
+					let pool_depth = if pool.is_empty() {
+						None
+					} else {
+						Some(pools.iter().find(|(name, _)| name.as_bytes() == pool.as_bytes()).ok_or_else(|| {
+							location.make_error(ReadError::UndefinedPool(pool.to_owned()))
+						})?.1)
+					};
+
+					// And then the rest:
 					BuildRuleCommand::Command {
 						command: expand_var("command")?,
 						description: expand_var("description")?,
@@ -127,6 +165,8 @@ fn read_into<'a: 'p, 'p>(
 						restat: build_rule_scope.lookup_var("restat").is_some(),
 						rspfile: expand_var("rspfile")?,
 						rspfile_content: expand_var("rspfile")?,
+						pool,
+						pool_depth,
 					}
 				};
 
@@ -155,7 +195,7 @@ fn read_into<'a: 'p, 'p>(
 				let path = loc.map_error(expand_str(path, scope))?;
 				let path = loc.map_error(to_path(&path))?;
 				let source = loc.map_error(read_bytes(path, &pile))?;
-				read_into(&file_name.with_file_name(path), &source, &pile, spec, scope)?;
+				read_into(&file_name.with_file_name(path), &source, &pile, spec, scope, pools)?;
 			}
 			Statement::SubNinja { path } => {
 				let loc = parser.location();
@@ -170,6 +210,7 @@ fn read_into<'a: 'p, 'p>(
 					&subpile,
 					spec,
 					&mut subscope,
+					pools,
 				)?;
 			}
 		}

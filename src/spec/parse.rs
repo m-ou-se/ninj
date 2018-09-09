@@ -40,6 +40,9 @@ pub enum Statement<'a> {
 		order_deps: Vec<&'a RawStr>,
 	},
 
+	/// A pool definition.
+	Pool { name: &'a str },
+
 	/// A default target declaration.
 	Default { paths: Vec<&'a RawStr> },
 
@@ -234,6 +237,14 @@ impl<'a, 'b> Parser<'a, 'b> {
 					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
 				}
 				Statement::Rule { name }
+			}
+			"pool" => {
+				let name = eat_identifier(&mut line)
+					.ok_or_else(|| loc.make_error(ParseError::ExpectedName))?;
+				if !line.is_empty() {
+					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
+				}
+				Statement::Pool { name }
 			}
 			"include" | "subninja" => {
 				let path = loc.map_error(eat_path(&mut line))?;

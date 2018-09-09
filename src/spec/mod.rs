@@ -66,6 +66,10 @@ pub enum BuildRuleCommand {
 		rspfile: RawString,
 		/// The contents of the file to write before executing the command.
 		rspfile_content: RawString,
+		/// The name of the pool in which the command should run.
+		pool: RawString,
+		/// The depth of the pool, i.e. the maximum number of concurrent jobs in the pool.
+		pool_depth: Option<u16>,
 	},
 }
 

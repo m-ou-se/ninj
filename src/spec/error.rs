@@ -1,5 +1,6 @@
 //! Errors.
 
+use raw_string::RawString;
 use std;
 
 /// A line in a file: The place where something went srong.
@@ -79,6 +80,7 @@ pub enum ParseError {
 	InvalidUtf8,
 	ExpectedPath,
 	ExpectedColon,
+	ExpectedName,
 	ExpectedRuleName,
 	ExpectedEndOfLine,
 	InvalidEscape,
@@ -92,13 +94,14 @@ impl std::fmt::Display for ParseError {
 			"{}",
 			match self {
 				ExpectedStatement => {
-					"Expected `build', `rule', `default', `include', `subninja', or `var = value'"
+					"Expected `build', `rule', `pool', `default', `include', `subninja', or `var = value'"
 				}
 				ExpectedVarDef => "Expected `var = value'",
 				UnexpectedIndent => "Unexpected indent",
 				InvalidUtf8 => "Invalid UTF-8 sequence",
 				ExpectedPath => "Missing path",
 				ExpectedColon => "Missing `:'",
+				ExpectedName => "Missing name of definition",
 				ExpectedRuleName => "Missing rule name",
 				ExpectedEndOfLine => "Garbage at end of line",
 				InvalidEscape => "Invalid $-escape (literal `$' is written as `$$')",
@@ -149,6 +152,16 @@ pub enum ReadError {
 	ParseError(ParseError),
 	/// A `build` definition refers to a `rule` which doesn't exist.
 	UndefinedRule(String),
+	/// A `build` definition refers to a `pool` which doesn't exist.
+	UndefinedPool(RawString),
+	/// A pool with this name was already defined.
+	DuplicatePool(String),
+	/// The depth value of a `pool` is not a valid value.
+	InvalidPoolDepth,
+	/// Missing the `depth =` variable in a pool definition.
+	ExpectedPoolDepth,
+	/// Got a definition of a variable which is not recognized in this (`pool`) definition.
+	UnknownVariable(String),
 	/// Variable expansion encountered a cycle.
 	ExpansionError(ExpansionError),
 	/// A problem while trying to open or read a file.
@@ -163,6 +176,11 @@ impl std::fmt::Display for ReadError {
 		match self {
 			ReadError::ParseError(e) => write!(f, "{}", e),
 			ReadError::UndefinedRule(n) => write!(f, "Undefined rule name: {}", n),
+			ReadError::UndefinedPool(n) => write!(f, "Undefined pool name: {}", n),
+			ReadError::DuplicatePool(n) => write!(f, "Duplicate pool: {}", n),
+			ReadError::InvalidPoolDepth => write!(f, "Invalid pool depth"),
+			ReadError::ExpectedPoolDepth => write!(f, "Missing `depth =' line"),
+			ReadError::UnknownVariable(n) => write!(f, "Unexpected variable: {}", n),
 			ReadError::ExpansionError(e) => write!(f, "{}", e),
 			ReadError::IoError { file_name, error } => {
 				write!(f, "Unable to read {:?}: {}", file_name, error)
