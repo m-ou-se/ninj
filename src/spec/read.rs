@@ -185,7 +185,7 @@ fn read_into<'a: 'p, 'p>(
 							.iter()
 							.find(|(name, _)| name.as_bytes() == pool.as_bytes())
 							.ok_or_else(|| {
-								location.make_error(ReadError::UndefinedPool(pool.to_owned()))
+								location.make_error(ReadError::UndefinedPool(pool))
 							})?;
 						(n.clone(), Some(*d))
 					};
