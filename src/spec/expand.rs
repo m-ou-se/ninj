@@ -1,7 +1,7 @@
 //! `$`-expansion.
 
 use super::eat::{eat_identifier, is_identifier_char};
-use super::error::{InvalidEscape, ExpansionError};
+use super::error::{ExpansionError, InvalidEscape};
 use super::scope::{FoundVar, VarScope};
 use raw_string::{RawStr, RawString};
 
