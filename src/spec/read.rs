@@ -178,21 +178,17 @@ fn read_into<'a: 'p, 'p>(
 
 					// First the pool, so we can look it up:
 					let pool = expand_var("pool")?;
-					let pool_depth = if pool.is_empty() {
-						None
+					let (pool, pool_depth) = if pool.is_empty() {
+						(String::new(), None)
 					} else {
-						Some(
-							pools
-								.iter()
-								.find(|(name, _)| name.as_bytes() == pool.as_bytes())
-								.ok_or_else(|| {
-									location.make_error(ReadError::UndefinedPool(pool.to_owned()))
-								})?.1,
-						)
+						let (n, d) = pools
+							.iter()
+							.find(|(name, _)| name.as_bytes() == pool.as_bytes())
+							.ok_or_else(|| {
+								location.make_error(ReadError::UndefinedPool(pool.to_owned()))
+							})?;
+						(n.clone(), Some(*d))
 					};
-					// Since the pool is either empty, or matched a &str, we
-					// can safely assume it is valid UTF-8 at this point.
-					let pool = unsafe { String::from_utf8_unchecked(pool.into_bytes()) };
 
 					// And then the rest:
 					BuildRuleCommand::Command {
