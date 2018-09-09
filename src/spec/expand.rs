@@ -113,12 +113,15 @@ fn expand_var_to<S: VarScope>(
 ) -> Result<(), ExpansionError> {
 	Ok(match scope.lookup_var(var_name) {
 		Some(FoundVar::Expanded(e)) => result.push_str(e),
-		Some(FoundVar::Paths(paths)) => {
+		Some(FoundVar::Paths { paths, newlines }) => {
 			for (i, p) in paths.iter().enumerate() {
-				if i > 0 {
+				if !newlines && i > 0 {
 					result.push(b' ');
 				}
 				write_shell_escaped_to(p, result);
+				if newlines {
+					result.push(b'\n');
+				}
 			}
 		}
 		Some(FoundVar::Unexpanded(e)) => {

@@ -60,7 +60,7 @@ pub struct BuildRuleScope<'a> {
 	/// The list of inputs used for `$in` and `$in_newline`.
 	pub inputs: &'a [RawString],
 
-	/// The list of outputs used for `$out` and `$out_newline`.
+	/// The list of outputs used for `$out`.
 	pub outputs: &'a [RawString],
 }
 
@@ -74,9 +74,13 @@ pub enum FoundVar<'a> {
 	/// This is the case for variables defined in a `rule` definition.
 	Unexpanded(&'a RawStr),
 
-	/// The variable is a special variable (`$in` or `$out`) containing paths
-	/// which need to be escaped.
-	Paths(&'a [RawString]),
+	/// The variable is a special variable (`$in`, `$out`, or `$in_newline`)
+	/// containing paths which need to be escaped and separated by either
+	/// spaces or newlines.
+	Paths {
+		paths: &'a [RawString],
+		newlines: bool,
+	},
 }
 
 /// A scope containing variable definitions.
@@ -120,19 +124,28 @@ impl<'a> VarScope for BuildScope<'a> {
 
 impl<'a> VarScope for BuildRuleScope<'a> {
 	fn lookup_var(&self, var_name: &str) -> Option<FoundVar> {
-		if var_name == "in" {
-			Some(FoundVar::Paths(self.inputs))
-		} else if var_name == "out" {
-			Some(FoundVar::Paths(self.outputs))
-		} else {
-			self.build_scope
+		match var_name {
+			"in" => Some(FoundVar::Paths {
+				paths: self.inputs,
+				newlines: false,
+			}),
+			"out" => Some(FoundVar::Paths {
+				paths: self.outputs,
+				newlines: false,
+			}),
+			"in_newline" => Some(FoundVar::Paths {
+				paths: self.inputs,
+				newlines: true,
+			}),
+			_ => self
+				.build_scope
 				.build_vars
 				.lookup_var(var_name)
 				.or_else(|| {
 					self.rule_vars
 						.lookup_var(var_name)
 						.or_else(|| self.build_scope.file_scope.lookup_var(var_name))
-				})
+				}),
 		}
 	}
 }
