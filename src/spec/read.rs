@@ -176,7 +176,7 @@ fn read_into<'a: 'p, 'p>(
 
 					// And expand the special variables with it:
 
-					// First the pool, so we can look it up:
+					// First the pool, and also look it up:
 					let pool = expand_var("pool")?;
 					let (pool, pool_depth) = if pool.is_empty() {
 						(String::new(), None)
