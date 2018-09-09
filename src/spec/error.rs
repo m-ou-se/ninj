@@ -77,7 +77,6 @@ pub enum ParseError {
 	ExpectedStatement,
 	ExpectedVarDef,
 	UnexpectedIndent,
-	InvalidUtf8,
 	ExpectedPath,
 	ExpectedColon,
 	ExpectedName,
@@ -98,7 +97,6 @@ impl std::fmt::Display for ParseError {
 				}
 				ExpectedVarDef => "Expected `var = value'",
 				UnexpectedIndent => "Unexpected indent",
-				InvalidUtf8 => "Invalid UTF-8 sequence",
 				ExpectedPath => "Missing path",
 				ExpectedColon => "Missing `:'",
 				ExpectedName => "Missing name of definition",
@@ -115,12 +113,6 @@ impl std::error::Error for ParseError {}
 impl From<InvalidEscape> for ParseError {
 	fn from(_: InvalidEscape) -> ParseError {
 		ParseError::InvalidEscape
-	}
-}
-
-impl From<std::str::Utf8Error> for ParseError {
-	fn from(_: std::str::Utf8Error) -> ParseError {
-		ParseError::InvalidUtf8
 	}
 }
 
@@ -171,6 +163,18 @@ pub enum ReadError {
 		file_name: std::path::PathBuf,
 		error: std::io::Error,
 	},
+	/// Invalid UTF-8 encoding in path.
+	///
+	/// This error does not occor on Unix. On Unix, the raw bytes are used in
+	/// paths, without any assumed encoding.
+	///
+	/// On Windows, the paths are converted to UTF-16 before giving them to the
+	/// operating system.
+	InvalidUtf8 {
+		/// The name of the variable in which it went wrong.
+		/// Not set for inputs, outputs, include paths, and subninja paths.
+		var: Option<String>,
+	}
 }
 
 impl std::fmt::Display for ReadError {
@@ -187,6 +191,13 @@ impl std::fmt::Display for ReadError {
 			ReadError::ExpansionError(e) => write!(f, "{}", e),
 			ReadError::IoError { file_name, error } => {
 				write!(f, "Unable to read {:?}: {}", file_name, error)
+			}
+			ReadError::InvalidUtf8 { var } => {
+				write!(f, "Invalid UTF-8 encoding")?;
+				if let Some(var) = var {
+					write!(f, " in: {}", var)?;
+				}
+				Ok(())
 			}
 		}
 	}
@@ -207,15 +218,15 @@ impl From<ParseError> for ReadError {
 	}
 }
 
-impl From<std::str::Utf8Error> for ReadError {
-	fn from(src: std::str::Utf8Error) -> ReadError {
-		ReadError::ParseError(src.into())
-	}
-}
-
 impl From<ExpansionError> for ReadError {
 	fn from(src: ExpansionError) -> ReadError {
 		ReadError::ExpansionError(src)
+	}
+}
+
+impl From<std::string::FromUtf8Error> for ReadError {
+	fn from(_: std::string::FromUtf8Error) -> ReadError {
+		ReadError::InvalidUtf8 { var: None }
 	}
 }
 
@@ -237,8 +248,8 @@ impl From<ErrorWithLocation<ExpansionError>> for ErrorWithLocation<ReadError> {
 	}
 }
 
-impl From<ErrorWithLocation<std::str::Utf8Error>> for ErrorWithLocation<ReadError> {
-	fn from(src: ErrorWithLocation<std::str::Utf8Error>) -> Self {
+impl From<ErrorWithLocation<std::string::FromUtf8Error>> for ErrorWithLocation<ReadError> {
+	fn from(src: ErrorWithLocation<std::string::FromUtf8Error>) -> Self {
 		src.convert()
 	}
 }

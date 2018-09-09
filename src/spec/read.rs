@@ -1,7 +1,6 @@
 use super::error::{ErrorWithLocation, ReadError};
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
 use super::parse::{Parser, Statement, Variable};
-use super::path::to_path;
 use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, FileScope, Rule, VarScope};
 use super::{BuildRule, BuildRuleCommand, DepStyle, Spec};
 use pile::Pile;
@@ -10,7 +9,7 @@ use std::borrow::ToOwned;
 use std::fs::File;
 use std::io::Read;
 use std::mem::replace;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 
 fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawStr, ReadError> {
@@ -165,6 +164,15 @@ fn read_into<'a: 'p, 'p>(
 					};
 
 					let expand_var = |name| expand_var(name, &build_rule_scope).map_err(make_error);
+					let expand_var_os = |name| {
+						expand_var(name).map_err(|e| e.convert()).and_then(|val| {
+							val.to_osstring().map_err(|_| {
+								location.make_error(ReadError::InvalidUtf8 {
+									var: Some(name.to_string()),
+								})
+							})
+						})
+					};
 
 					// And expand the special variables with it:
 
@@ -182,12 +190,15 @@ fn read_into<'a: 'p, 'p>(
 								})?.1,
 						)
 					};
+					// Since the pool is either empty, or matched a &str, we
+					// can safely assume it is valid UTF-8 at this point.
+					let pool = unsafe { String::from_utf8_unchecked(pool.into_bytes()) };
 
 					// And then the rest:
 					BuildRuleCommand::Command {
-						command: expand_var("command")?,
+						command: expand_var_os("command")?,
 						description: expand_var("description")?,
-						depfile: expand_var("depfile")?,
+						depfile: PathBuf::from(expand_var_os("depfile")?),
 						deps: match expand_var("deps")?.as_bytes() {
 							b"gcc" => Some(DepStyle::Gcc),
 							b"msvc" => Some(DepStyle::Msvc),
@@ -196,7 +207,7 @@ fn read_into<'a: 'p, 'p>(
 						msvc_deps_prefix: expand_var("msvc_deps_prefix")?,
 						generator: build_rule_scope.lookup_var("generator").is_some(),
 						restat: build_rule_scope.lookup_var("restat").is_some(),
-						rspfile: expand_var("rspfile")?,
+						rspfile: PathBuf::from(expand_var_os("rspfile")?),
 						rspfile_content: expand_var("rspfile")?,
 						pool,
 						pool_depth,
@@ -209,25 +220,38 @@ fn read_into<'a: 'p, 'p>(
 
 				let order_deps = expand_strs(&order_deps, &build_scope).map_err(make_error)?;
 
+				let to_paths = |strs: Vec<RawString>| {
+					strs.into_iter()
+						.map(|s| s.to_pathbuf())
+						.collect::<Result<Vec<PathBuf>, _>>()
+						.map_err(|e| location.make_error(ReadError::from(e)))
+				};
+
 				spec.build_rules.push(BuildRule {
-					outputs,
-					inputs,
-					order_deps,
+					outputs: to_paths(outputs)?,
+					inputs: to_paths(inputs)?,
+					order_deps: to_paths(order_deps)?,
 					command,
 				});
 			}
 			Statement::Default { paths } => {
-				parser.location().map_error(expand_strs_into(
-					&paths,
-					scope,
-					&mut spec.default_targets,
-				))?;
+				let loc = parser.location();
+				spec.default_targets.reserve(paths.len());
+				for p in paths {
+					spec.default_targets.push(
+						loc.map_error(
+							expand_str(p, scope)
+								.map_err(ReadError::from)
+								.and_then(|s| s.to_pathbuf().map_err(ReadError::from)),
+						)?,
+					);
+				}
 			}
 			Statement::Include { path } => {
 				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
-				let path = loc.map_error(to_path(&path))?;
-				let source = loc.map_error(read_bytes(path, &pile))?;
+				let path = loc.map_error(path.to_pathbuf())?;
+				let source = loc.map_error(read_bytes(&path, &pile))?;
 				read_into(
 					&file_name.with_file_name(path),
 					&source,
@@ -240,9 +264,9 @@ fn read_into<'a: 'p, 'p>(
 			Statement::SubNinja { path } => {
 				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
-				let path = loc.map_error(to_path(&path))?;
+				let path = loc.map_error(path.to_pathbuf())?;
 				let subpile = Pile::new();
-				let source = loc.map_error(read_bytes(path, &subpile))?;
+				let source = loc.map_error(read_bytes(&path, &subpile))?;
 				let mut subscope = scope.new_subscope();
 				read_into(
 					&file_name.with_file_name(path),
