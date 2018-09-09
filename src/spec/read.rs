@@ -62,6 +62,15 @@ fn read_into<'a: 'p, 'p>(
 				}
 				let mut vars = Vec::new();
 				while let Some(var) = parser.next_variable()? {
+					if !match var.name {
+						"command" | "description" | "depfile" | "deps" | "msvc_deps_prefix" => true,
+						"rspfile" | "rspfile_content" | "generator" | "restat" | "pool" => true,
+						_ => false,
+					} {
+						return Err(parser
+							.location()
+							.make_error(ReadError::UnknownVariable(var.name.to_string())));
+					}
 					vars.push(var);
 				}
 				scope.rules.push(Rule { name, vars })

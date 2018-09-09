@@ -162,7 +162,7 @@ pub enum ReadError {
 	InvalidPoolDepth,
 	/// Missing the `depth =` variable in a pool definition.
 	ExpectedPoolDepth,
-	/// Got a definition of a variable which is not recognized in this (`pool`) definition.
+	/// Got a definition of a variable which is not recognized in this (`pool` or `rule`) definition.
 	UnknownVariable(String),
 	/// Variable expansion encountered a cycle.
 	ExpansionError(ExpansionError),
