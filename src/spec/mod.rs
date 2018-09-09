@@ -18,6 +18,7 @@ use raw_string::RawString;
 pub struct Spec {
 	pub build_rules: Vec<BuildRule>,
 	pub default_targets: Vec<RawString>,
+	pub build_dir: RawString,
 }
 
 /// How to build a set of outputs from a set of inputs.
@@ -79,6 +80,7 @@ impl Spec {
 		Spec {
 			build_rules: Vec::new(),
 			default_targets: Vec::new(),
+			build_dir: RawString::new(),
 		}
 	}
 }

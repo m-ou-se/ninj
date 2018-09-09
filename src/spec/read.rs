@@ -5,10 +5,11 @@ use super::path::to_path;
 use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, FileScope, Rule, VarScope};
 use super::{BuildRule, BuildRuleCommand, DepStyle, Spec};
 use pile::Pile;
-use raw_string::RawStr;
+use raw_string::{RawStr, RawString};
 use std::borrow::ToOwned;
 use std::fs::File;
 use std::io::Read;
+use std::mem::replace;
 use std::path::Path;
 use std::str::from_utf8;
 
@@ -38,6 +39,13 @@ pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
 	let mut scope = FileScope::new();
 	let mut pools = Vec::new();
 	read_into(file_name, &source, &pile, &mut spec, &mut scope, &mut pools)?;
+	if let Some(var) = scope
+		.vars
+		.iter_mut()
+		.rfind(|var| var.name.as_bytes() == b"builddir")
+	{
+		spec.build_dir = replace(&mut var.value, RawString::new());
+	}
 	Ok(spec)
 }
 
