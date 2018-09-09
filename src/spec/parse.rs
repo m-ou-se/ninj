@@ -1,8 +1,8 @@
 //! The parser.
 
-use super::expand::check_escapes;
 use super::eat::{eat_identifier, eat_path, eat_paths, eat_whitespace};
 use super::error::{ErrorWithLocation, Location, ParseError};
+use super::expand::check_escapes;
 use raw_string::RawStr;
 use std::path::Path;
 
@@ -25,15 +25,10 @@ pub struct Variable<'a> {
 #[derive(Debug)]
 pub enum Statement<'a> {
 	/// A file-level variable definition.
-	Variable {
-		name: &'a str,
-		value: &'a RawStr,
-	},
+	Variable { name: &'a str, value: &'a RawStr },
 
 	/// A rule definition.
-	Rule {
-		name: &'a str,
-	},
+	Rule { name: &'a str },
 
 	/// A build definition.
 	Build {
@@ -46,19 +41,13 @@ pub enum Statement<'a> {
 	},
 
 	/// A default target declaration.
-	Default {
-		paths: Vec<&'a RawStr>,
-	},
+	Default { paths: Vec<&'a RawStr> },
 
 	/// An include statement.
-	Include {
-		path: &'a RawStr,
-	},
+	Include { path: &'a RawStr },
 
 	/// A subninja statement.
-	SubNinja {
-		path: &'a RawStr,
-	},
+	SubNinja { path: &'a RawStr },
 }
 
 impl<'a, 'b> Parser<'a, 'b> {
@@ -143,9 +132,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 	///
 	/// To be used (repeatedly) right after a `build` or `rule` statement.
 	/// Returns `None` when done.
-	pub fn next_variable(
-		&mut self,
-	) -> Result<Option<Variable<'a>>, ErrorWithLocation<ParseError>> {
+	pub fn next_variable(&mut self) -> Result<Option<Variable<'a>>, ErrorWithLocation<ParseError>> {
 		if self.next_indent() > 0 {
 			if let Some(mut line) = self.next_line() {
 				let name = eat_identifier(&mut line)
