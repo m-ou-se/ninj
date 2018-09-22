@@ -174,7 +174,7 @@ pub enum ReadError {
 		/// The name of the variable in which it went wrong.
 		/// Not set for inputs, outputs, include paths, and subninja paths.
 		var: Option<String>,
-	}
+	},
 }
 
 impl std::fmt::Display for ReadError {

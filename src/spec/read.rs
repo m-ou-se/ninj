@@ -175,9 +175,7 @@ fn read_into<'a: 'p, 'p>(
 						let (n, d) = pools
 							.iter()
 							.find(|(name, _)| name.as_bytes() == pool.as_bytes())
-							.ok_or_else(|| {
-								location.make_error(ReadError::UndefinedPool(pool))
-							})?;
+							.ok_or_else(|| location.make_error(ReadError::UndefinedPool(pool)))?;
 						(n.clone(), Some(*d))
 					};
 
@@ -218,7 +216,8 @@ fn read_into<'a: 'p, 'p>(
 				let loc = parser.location();
 				spec.default_targets.reserve(paths.len());
 				for p in paths {
-					spec.default_targets.push(loc.map_error(expand_str(p, scope))?);
+					spec.default_targets
+						.push(loc.map_error(expand_str(p, scope))?);
 				}
 			}
 			Statement::Include { path } => {
