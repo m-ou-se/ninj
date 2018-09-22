@@ -7,18 +7,18 @@ use raw_string::{RawStr, RawString};
 
 /// Check if the given string contains only valid escape sequences.
 pub fn check_escapes(src: &RawStr) -> Result<(), InvalidEscape> {
-	let mut iter = src.iter();
-	while let Some(&c) = iter.next() {
+	let mut iter = src.bytes();
+	while let Some(c) = iter.next() {
 		if c == b'$' {
 			match iter.next() {
 				Some(b'\n') => (),
 				Some(b' ') => (),
 				Some(b':') => (),
 				Some(b'$') => (),
-				Some(&x) if is_identifier_char(x) => (),
+				Some(x) if is_identifier_char(x) => (),
 				Some(b'{') => {
 					while match iter.next() {
-						Some(&x) if is_identifier_char(x) => true,
+						Some(x) if is_identifier_char(x) => true,
 						Some(b'}') => false,
 						_ => return Err(InvalidEscape),
 					} {}
@@ -56,31 +56,31 @@ pub fn expand_var<S: VarScope>(var_name: &str, scope: &S) -> Result<RawString, E
 /// The parser uses `check_escapes` on all variable definitons it reads,
 /// so anything from the parser can be assumed to contain only valid escape sequences.
 pub fn expand_str<T: AsRef<RawStr>, S: VarScope>(
-	value: T,
+	source: T,
 	scope: &S,
 ) -> Result<RawString, ExpansionError> {
 	let mut s = RawString::new();
-	expand_str_to(value.as_ref(), scope, &mut s, None)?;
+	expand_str_to(source.as_ref(), scope, &mut s, None)?;
 	Ok(s)
 }
 
 pub(super) fn expand_strs<S: VarScope>(
-	values: &[&RawStr],
+	sources: &[&RawStr],
 	scope: &S,
 ) -> Result<Vec<RawString>, ExpansionError> {
 	let mut vec = Vec::new();
-	expand_strs_into(values, scope, &mut vec)?;
+	expand_strs_into(sources, scope, &mut vec)?;
 	Ok(vec)
 }
 
 pub(super) fn expand_strs_into<S: VarScope>(
-	values: &[&RawStr],
+	sources: &[&RawStr],
 	scope: &S,
 	vec: &mut Vec<RawString>,
 ) -> Result<(), ExpansionError> {
-	vec.reserve(values.len());
-	for value in values {
-		vec.push(expand_str(value, scope)?);
+	vec.reserve(sources.len());
+	for source in sources {
+		vec.push(expand_str(source, scope)?);
 	}
 	Ok(())
 }
@@ -93,8 +93,8 @@ fn is_shell_safe(c: &u8) -> bool {
 	}
 }
 
-fn write_shell_escaped_to(value: &RawStr, output: &mut RawString) {
-	for (i, part) in value.as_bytes().split(|&b| b == b'\'').enumerate() {
+fn write_shell_escaped_to(source: &RawStr, output: &mut RawString) {
+	for (i, part) in source.as_bytes().split(|&b| b == b'\'').enumerate() {
 		if i > 0 {
 			output.push_str("\\\'");
 		}
@@ -144,45 +144,40 @@ fn expand_var_to<S: VarScope>(
 }
 
 fn expand_str_to<S: VarScope>(
-	mut value: &RawStr,
+	mut source: &RawStr,
 	scope: &S,
 	result: &mut RawString,
 	prot: Option<&RecursionProtection>,
 ) -> Result<(), ExpansionError> {
-	while let Some(i) = value.as_bytes().iter().position(|&b| b == b'$') {
-		result.push_str(&value[..i]);
-		value = &value[i + 1..];
-		if let Some(var) = eat_identifier(&mut value) {
+	while let Some(i) = source.bytes().position(|b| b == b'$') {
+		result.push_str(&source[..i]); // The part before the '$' is used literally
+		source = &source[i + 1..]; // Only keep part after the '$' for further processing
+		if let Some(var) = eat_identifier(&mut source) {
+			// Simple variable: "$var"
 			expand_var_to(var, scope, result, prot)?;
-		} else {
-			let mut bytes = value.iter();
-			match bytes.next() {
-				Some(b'\n') => {
-					while match bytes.clone().next() {
-						Some(b' ') | Some(b'\t') => true,
-						_ => false,
-					} {
-						bytes.next();
-					}
+		} else if source.starts_with("{") {
+			// Braced variable: "${var}"
+			let mut s = &source[1..]; // Skip the '{'.
+			if let Some(var) = eat_identifier(&mut s) {
+				if s.starts_with("}") {
+					// Only do the expansion when the matching '}' exists in the right place.
+					// (This should already have been checked by `check_escapes`.)
+					expand_var_to(var, scope, result, prot)?;
+					source = &s[1..]; // Ignore the '}'.
 				}
-				Some(b'{') => {
-					let mut x = RawStr::from_bytes(bytes.as_slice());
-					bytes = value.iter();
-					if let Some(var) = eat_identifier(&mut x) {
-						let mut x = x.iter();
-						if x.next() == Some(&b'}') {
-							expand_var_to(var, scope, result, prot)?;
-							bytes = x;
-						}
-					}
-				}
-				Some(&x) => result.push(x),
-				None => (),
 			}
-			value = RawStr::from_bytes(bytes.as_slice());
+		} else if source.starts_with("\n") {
+			// Escaped newline: "$\n"
+			source = &source[1..]; // Skip the newline itself first.
+			let n = source.bytes().position(|b| b != b' ' && b != b'\t').unwrap_or(source.len());
+			source = &source[n..]; // Then skip any the indentation.
+		} else if source.starts_with("$") {
+			// Escaped dollar sign: "$$"
+			source = &source[1..]; // Skip the escaped dollar sign.
+			result.push(b'$');
 		}
 	}
-	result.push_str(value);
+	result.push_str(source);
 	Ok(())
 }
 

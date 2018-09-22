@@ -87,8 +87,8 @@ impl<'a, 'b> Parser<'a, 'b> {
 				// Ignore comment line.
 				let next_line_pos = self
 					.source
-					.iter()
-					.position(|&c| c == b'\n')
+					.bytes()
+					.position(|c| c == b'\n')
 					.map_or(self.source.len(), |n| n + 1);
 				self.source = &self.source[next_line_pos..];
 				self.line_num += 1;
@@ -108,7 +108,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 		}
 
 		let mut escape = false;
-		let (line_end, newline) = match self.source.iter().position(|&c| {
+		let (line_end, newline) = match self.source.bytes().position(|c| {
 			if escape {
 				if c == b'\n' {
 					self.escaped_lines += 1;

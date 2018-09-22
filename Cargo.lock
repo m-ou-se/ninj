@@ -3,7 +3,7 @@ name = "ninj"
 version = "0.1.0"
 dependencies = [
  "pile 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "raw-string 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "raw-string 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -16,7 +16,7 @@ dependencies = [
 
 [[package]]
 name = "raw-string"
-version = "0.2.4"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -26,5 +26,5 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [metadata]
 "checksum pile 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a050cc1e09fdf605fe325dd6200872e6c9a5b007b1eb2c1ba717d3e387004a3e"
-"checksum raw-string 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)" = "18fa741401d556f92b4a8cfdffddd6b1652db016c13ac9598c304228d159f059"
+"checksum raw-string 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "8b10bec0cd7411cfa80119c1a62912a7caec9885907fc0b264e877bcb94ce835"
 "checksum stable_deref_trait 1.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "dba1a27d3efae4351c8051072d619e3ade2820635c3958d826bfea39d59b54c8"

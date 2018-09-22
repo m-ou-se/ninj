@@ -7,8 +7,8 @@ use std::str::from_utf8_unchecked;
 pub fn eat_whitespace(src: &mut &RawStr) -> i32 {
 	let mut n = 0;
 	let whitespace_end = src
-		.iter()
-		.position(|&c| match c {
+		.bytes()
+		.position(|c| match c {
 			b' ' => {
 				n += 1;
 				false
@@ -29,8 +29,8 @@ pub fn is_identifier_char(c: u8) -> bool {
 
 pub fn eat_identifier<'a>(src: &mut &'a RawStr) -> Option<&'a str> {
 	let ident_end = src
-		.iter()
-		.position(|&c| !is_identifier_char(c))
+		.bytes()
+		.position(|c| !is_identifier_char(c))
 		.unwrap_or(src.len());
 	let (ident, rest) = src.split_at(ident_end);
 	*src = rest;
@@ -45,7 +45,7 @@ pub fn eat_path<'a>(src: &mut &'a RawStr) -> Result<&'a RawStr, ParseError> {
 	let mut escape = false;
 	let mut newline = false;
 	let ident_end = src
-		.iter()
+		.bytes()
 		.position(|c| {
 			if newline {
 				match c {
@@ -54,13 +54,13 @@ pub fn eat_path<'a>(src: &mut &'a RawStr) -> Result<&'a RawStr, ParseError> {
 				}
 			}
 			if escape {
-				if *c == b'\n' {
+				if c == b'\n' {
 					newline = true;
 				}
 				escape = false;
-			} else if b" :|".contains(c) {
+			} else if b" :|".contains(&c) {
 				return true;
-			} else if *c == b'$' {
+			} else if c == b'$' {
 				escape = true;
 			}
 			false
@@ -82,9 +82,9 @@ pub fn eat_paths<'a>(
 	let mut paths = Vec::new();
 	loop {
 		if let Some((first, rest)) = src.split_first() {
-			if endings.contains(first) {
+			if endings.contains(&first) {
 				*src = rest;
-				return Ok((paths, Some(*first)));
+				return Ok((paths, Some(first)));
 			}
 		} else {
 			return Ok((paths, None));
