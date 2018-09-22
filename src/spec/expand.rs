@@ -214,3 +214,48 @@ fn check_recursion(
 	}
 	Ok(())
 }
+
+#[test]
+pub fn expand_str_test() {
+	struct Scope;
+	impl VarScope for Scope {
+		fn lookup_var(&self, var_name: &str) -> Option<FoundVar> {
+			match var_name {
+				"world" => Some(FoundVar::Expanded("TEST".as_ref())),
+				"WORLD" => Some(FoundVar::Expanded("$TEST".as_ref())),
+				"foo" => Some(FoundVar::Unexpanded("blah".as_ref())),
+				"bar" => Some(FoundVar::Unexpanded("a $foo b $world $$c".as_ref())),
+				"r" => Some(FoundVar::Unexpanded("1 2 3 $r 4 5".as_ref())),
+				"r1" => Some(FoundVar::Unexpanded("$r2".as_ref())),
+				"r2" => Some(FoundVar::Unexpanded("$r3".as_ref())),
+				"r3" => Some(FoundVar::Unexpanded("$r1".as_ref())),
+				"in" => Some(FoundVar::Paths {
+					paths: Box::leak(Box::new([
+						RawString::from("hello"),
+						RawString::from("wor ld"),
+					])),
+					newlines: false,
+				}),
+				"in_newline" => Some(FoundVar::Paths {
+					paths: Box::leak(Box::new([
+						RawString::from("he||o"),
+						RawString::from("wo'r|d"),
+					])),
+					newlines: true,
+				}),
+				_ => None,
+			}
+		}
+	}
+	assert_eq!(expand_str("hello $world", &Scope).unwrap(), "hello TEST");
+	assert_eq!(expand_str("hello $WORLD", &Scope).unwrap(), "hello $TEST");
+	assert_eq!(expand_str("hello $nope", &Scope).unwrap(), "hello ");
+	assert_eq!(expand_str("hello ${world} $world$$", &Scope).unwrap(), "hello TEST TEST$");
+	assert_eq!(expand_str("$|$|", &Scope).unwrap(), "||");
+	assert_eq!(expand_str("foo$\n  bar", &Scope).unwrap(), "foobar");
+	assert_eq!(expand_str("$foo$bar", &Scope).unwrap(), "blaha blah b TEST $c");
+	assert!(expand_str("$r", &Scope).unwrap_err().cycle.iter().eq(&["r"]));
+	assert!(expand_str("$r2", &Scope).unwrap_err().cycle.iter().eq(&["r1", "r3", "r2"]));
+	assert_eq!(expand_str("$in", &Scope).unwrap(), "hello 'wor ld'");
+	assert_eq!(expand_str("$in_newline", &Scope).unwrap(), "'he||o'\nwo\\\''r|d'\n");
+}
