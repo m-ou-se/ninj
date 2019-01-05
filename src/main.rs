@@ -1,5 +1,3 @@
-extern crate ninj;
-
 use std::convert::AsRef;
 
 use ninj::spec::read;
