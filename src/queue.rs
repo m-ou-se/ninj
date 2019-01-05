@@ -1,6 +1,4 @@
-use ninj::spec::Spec;
-use raw_string::RawStr;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::mem::replace;
 use std::sync::{Condvar, Mutex, MutexGuard};
 
@@ -9,7 +7,7 @@ struct Deps {
 	/// Build rules which depend on this build rule.
 	next: Vec<usize>,
 	/// Number of unfinished build rules which have this rule in their `next` list.
-	n_prev: usize,
+	n_deps_left: usize,
 }
 
 pub struct BuildQueue {
@@ -36,51 +34,76 @@ pub struct LockedAsyncBuildQueue<'a> {
 }
 
 impl BuildQueue {
-	pub fn new(
-		spec: &Spec,
-		target_to_rule: &BTreeMap<&RawStr, usize>,
-		targets: Vec<usize>,
-	) -> BuildQueue {
-		// TODO: Order-only dependencies.
+
+	/// Construct a new build dependency graph.
+	///
+	/// The (potiential) tasks are numbered 0 to `max_task_num`.
+	///
+	/// `targets` are the tasks thad need to be executed.
+	///
+	/// `get_task` is used to get the dependencies of a task and to see if a
+	/// task is phony. It is called exactly once for every task in the
+	/// dependency tree of the targets.
+	pub fn new<F, D>(
+		max_task_num: usize,
+		targets: impl IntoIterator<Item=usize>,
+		mut get_task: F,
+	) -> BuildQueue
+		where
+			F: FnMut(usize) -> (D, bool),
+			D: IntoIterator<Item=usize>,
+	{
 
 		let mut deps = vec![
 			Deps {
 				next: vec![],
-				n_prev: 0,
+				n_deps_left: 0,
 			};
-			spec.build_rules.len()
+			max_task_num
 		];
 
-		let mut visited = vec![false; spec.build_rules.len()];
+		let mut ready = Vec::new();
+
 		let mut n_tasks = 0;
 		let mut n_phony = 0;
 
-		let mut ready: Vec<usize> = Vec::new();
+		#[derive(Copy, Clone, PartialEq, Eq)]
+		enum State {
+			Unvisited,
+			Queued,
+			Visited,
+		}
 
-		let mut to_visit: VecDeque<usize> = targets.into();
+		let mut visited = vec![State::Unvisited; max_task_num];
+		let mut to_visit = VecDeque::<usize>::new();
+
+		for task in targets.into_iter() {
+			if visited[task] == State::Unvisited {
+				to_visit.push_back(task);
+				visited[task] = State::Queued;
+			}
+		}
 
 		// Build dependency graph
 		while let Some(task) = to_visit.pop_front() {
-			let rule = &spec.build_rules[task];
-			if !replace(&mut visited[task], true) {
-				n_tasks += 1;
-				if rule.is_phony() {
-					n_phony += 1;
+			visited[task] = State::Visited;
+			let (task_deps, phony) = get_task(task);
+			n_tasks += 1;
+			if phony {
+				n_phony += 1;
+			}
+			let mut n_deps = 0;
+			for dep in task_deps.into_iter() {
+				if visited[dep] == State::Unvisited {
+					to_visit.push_back(dep);
+					visited[dep] = State::Queued;
 				}
-				for input in &rule.inputs {
-					if let Some(&input) = target_to_rule.get(&input[..]) {
-						if !visited[input] {
-							to_visit.push_back(input);
-						}
-						deps[task].n_prev += 1;
-						deps[input].next.push(task);
-					} else {
-						// TODO println!("Need file: {:?}", input);
-					}
-				}
-				if deps[task].n_prev == 0 {
-					ready.push(task);
-				}
+				n_deps += 1;
+				deps[dep].next.push(task);
+			}
+			deps[task].n_deps_left = n_deps;
+			if n_deps == 0 {
+				ready.push(task);
 			}
 		}
 
@@ -128,8 +151,8 @@ impl BuildQueue {
 	pub fn complete_task(&mut self, task: usize) -> usize {
 		let mut newly_ready = 0;
 		for next in replace(&mut self.deps[task].next, Vec::new()) {
-			self.deps[next].n_prev -= 1;
-			if self.deps[next].n_prev == 0 {
+			self.deps[next].n_deps_left -= 1;
+			if self.deps[next].n_deps_left == 0 {
 				self.ready.push(next);
 				newly_ready += 1;
 			}

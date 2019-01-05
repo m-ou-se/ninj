@@ -6,7 +6,6 @@ use self::queue::BuildQueue;
 use ninj::spec::{read, BuildRuleCommand};
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
-use std::convert::AsRef;
 use std::path::PathBuf;
 use std::process::exit;
 use structopt::StructOpt;
@@ -73,9 +72,27 @@ fn main() {
 			eprintln!("Unknown target {:?}", target);
 			exit(1);
 		})
-	}).collect();
+	});
 
-	let queue = BuildQueue::new(&spec, &target_to_rule, targets).make_async();
+
+	let queue = BuildQueue::new(
+		spec.build_rules.len(),
+		targets,
+		|task: usize| {
+			let rule = &spec.build_rules[task];
+			(
+				rule.inputs.iter().flat_map(|input| {
+					if let Some(&input) = target_to_rule.get(&input[..]) {
+						Some(input)
+					} else {
+						println!("Need file: {:?}", input);
+						None
+					}
+				}),
+				rule.is_phony()
+			)
+		}
+	).make_async();
 
 	let n_threads = 8;
 
