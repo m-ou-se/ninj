@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::mem::replace;
 use std::sync::{Condvar, Mutex, MutexGuard};
 
@@ -10,6 +9,7 @@ struct Deps {
 	n_deps_left: usize,
 }
 
+/// A BuildQueue which knows in which order tasks may execute.
 pub struct BuildQueue {
 	/// Dependencies of build rules.
 	///
@@ -75,17 +75,17 @@ impl BuildQueue {
 		}
 
 		let mut visited = vec![State::Unvisited; max_task_num];
-		let mut to_visit = VecDeque::<usize>::new();
+		let mut to_visit = Vec::<usize>::new();
 
 		for task in targets.into_iter() {
 			if visited[task] == State::Unvisited {
-				to_visit.push_back(task);
+				to_visit.push(task);
 				visited[task] = State::Queued;
 			}
 		}
 
 		// Build dependency graph
-		while let Some(task) = to_visit.pop_front() {
+		while let Some(task) = to_visit.pop() {
 			visited[task] = State::Visited;
 			let (task_deps, phony) = get_task(task);
 			n_tasks += 1;
@@ -95,7 +95,7 @@ impl BuildQueue {
 			let mut n_deps = 0;
 			for dep in task_deps.into_iter() {
 				if visited[dep] == State::Unvisited {
-					to_visit.push_back(dep);
+					to_visit.push(dep);
 					visited[dep] = State::Queued;
 				}
 				n_deps += 1;
@@ -117,24 +117,15 @@ impl BuildQueue {
 		}
 	}
 
+	/// Turn the BuildQueue into an AsyncBuildQueue, which can be used from
+	/// multiple threads at once.
 	pub fn make_async(self) -> AsyncBuildQueue {
 		AsyncBuildQueue {
 			queue: Mutex::new(self),
 			condvar: Condvar::new(),
 		}
 	}
-}
 
-impl AsyncBuildQueue {
-	pub fn lock(&self) -> LockedAsyncBuildQueue {
-		LockedAsyncBuildQueue {
-			queue: self.queue.lock().unwrap(),
-			condvar: &self.condvar,
-		}
-	}
-}
-
-impl BuildQueue {
 	/// Check if there is something to do right now.
 	pub fn next(&mut self) -> Option<usize> {
 		let next = self.ready.pop();
@@ -158,6 +149,15 @@ impl BuildQueue {
 			}
 		}
 		newly_ready
+	}
+}
+
+impl AsyncBuildQueue {
+	pub fn lock(&self) -> LockedAsyncBuildQueue {
+		LockedAsyncBuildQueue {
+			queue: self.queue.lock().unwrap(),
+			condvar: &self.condvar,
+		}
 	}
 }
 
