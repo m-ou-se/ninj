@@ -209,7 +209,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 				} else {
 					(Vec::new(), x)
 				};
-				let mut order_deps = if x == Some(b'|') && line.starts_with("|") {
+				let order_deps = if x == Some(b'|') && line.starts_with("|") {
 					line = &line[1..];
 					eat_whitespace(&mut line);
 					loc.map_error(eat_paths(&mut line, b""))?.0
