@@ -1,13 +1,13 @@
-use std::mem::{swap, replace};
-use std::sync::{Mutex, MutexGuard, Condvar};
-use std::collections::BTreeMap;
-use raw_string::RawStr;
 use ninj::spec::Spec;
+use raw_string::RawStr;
+use std::collections::{BTreeMap, VecDeque};
+use std::mem::replace;
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 #[derive(Clone, Debug)]
 struct Deps {
 	next: Vec<usize>, // Build rules which depend on this build rule.
-	n_prev: usize, // Number of unfinished build rules which have this rule in their `next` list.
+	n_prev: usize,    // Number of unfinished build rules which have this rule in their `next` list.
 }
 
 struct BuildQueueInner {
@@ -27,48 +27,72 @@ pub struct BuildQueueLock<'a> {
 }
 
 impl BuildQueue {
-	pub fn new(spec: &Spec, target_to_rule: &BTreeMap<&RawStr, usize>, mut targets: Vec<usize>) -> BuildQueue {
-		let mut deps = vec![Deps {
-			next: vec![],
-			n_prev: 0,
-		}; spec.build_rules.len()];
+	pub fn new(
+		spec: &Spec,
+		target_to_rule: &BTreeMap<&RawStr, usize>,
+		targets: Vec<usize>,
+	) -> BuildQueue {
+		// TODO: Order-only dependencies.
 
-		let mut need = vec![false; spec.build_rules.len()];
-		let mut num_tasks = 0;
+		let mut deps = vec![
+			Deps {
+				next: vec![],
+				n_prev: 0,
+			};
+			spec.build_rules.len()
+		];
+
+		let mut visited = vec![false; spec.build_rules.len()];
+		let mut tasks = Vec::new();
 
 		let mut ready: Vec<usize> = Vec::new();
-		let mut next: Vec<usize> = Vec::new();
 
-		while !targets.is_empty() {
-			for target in targets.drain(..) {
-				let rule = &spec.build_rules[target];
-				if !need[target] {
-					num_tasks += 1;
-					need[target] = true;
-					for input in &rule.inputs {
-						if let Some(&input) = target_to_rule.get(&input[..]) {
-							if !need[input] {
-								next.push(input);
-							}
-							deps[target].n_prev += 1;
-							deps[input].next.push(target);
-						} else {
-							// TODO println!("Need file: {:?}", input);
+		let mut to_visit: VecDeque<usize> = targets.into();
+
+		// Build dependency graph
+		while let Some(task) = to_visit.pop_front() {
+			let rule = &spec.build_rules[task];
+			if !replace(&mut visited[task], true) {
+				if !rule.is_phony() {
+					tasks.push(task);
+				}
+				for input in &rule.inputs {
+					if let Some(&input) = target_to_rule.get(&input[..]) {
+						if !visited[input] {
+							to_visit.push_back(input);
 						}
-					}
-					if deps[target].n_prev == 0 {
-						ready.push(target);
+						deps[task].n_prev += 1;
+						deps[input].next.push(task);
+					} else {
+						// TODO println!("Need file: {:?}", input);
 					}
 				}
+				if deps[task].n_prev == 0 {
+					ready.push(task);
+				}
 			}
-			swap(&mut targets, &mut next);
+		}
+
+		// TODO: Check for cycles.
+
+		// Remove phony nodes, and connect their inputs/outputs directly.
+		for &task in &tasks {
+			if deps[task]
+				.next
+				.iter()
+				.any(|&i| spec.build_rules[i].is_phony())
+			{
+				let mut new_next = vec![];
+				unphony(spec, &deps, &mut new_next, &deps[task].next);
+				deps[task].next = new_next;
+			}
 		}
 
 		BuildQueue {
 			inner: Mutex::new(BuildQueueInner {
 				deps,
 				ready,
-				n_left: num_tasks,
+				n_left: tasks.len(),
 			}),
 			ready: Condvar::new(),
 		}
@@ -117,3 +141,14 @@ impl<'a> BuildQueueLock<'a> {
 	}
 }
 
+// Copies `next` into `new_next`, replacing all phony tasks by their
+// (recursively 'unphonied') next tasks.
+fn unphony(spec: &Spec, deps: &[Deps], new_next: &mut Vec<usize>, next: &[usize]) {
+	for &next in next {
+		if spec.build_rules[next].is_phony() {
+			unphony(spec, deps, new_next, &deps[next].next);
+		} else {
+			new_next.push(next);
+		}
+	}
+}

@@ -31,6 +31,18 @@ pub struct BuildRule {
 	pub command: BuildRuleCommand,
 }
 
+impl BuildRule {
+	/// Check if the build rule is just a phony rule.
+	///
+	/// Returns true iff `command` is `Phony`.
+	pub fn is_phony(&self) -> bool {
+		match self.command {
+			BuildRuleCommand::Phony => true,
+			_ => false,
+		}
+	}
+}
+
 /// The method of discovering extra dependencies.
 #[derive(Debug)]
 pub enum DepStyle {

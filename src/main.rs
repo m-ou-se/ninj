@@ -63,7 +63,7 @@ fn main() {
 		}
 	}
 
-	let targets: Vec<usize> = targets.into_iter().map(|target| {
+	let targets = targets.into_iter().map(|target| {
 		*target_to_rule.get(&target[..]).unwrap_or_else(|| {
 			eprintln!("Unknown target {:?}", target);
 			exit(1);
