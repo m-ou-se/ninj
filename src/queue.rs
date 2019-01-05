@@ -77,7 +77,7 @@ impl BuildQueue {
 		let mut visited = vec![State::Unvisited; max_task_num];
 		let mut to_visit = Vec::<usize>::new();
 
-		for task in targets.into_iter() {
+		for task in targets {
 			if visited[task] == State::Unvisited {
 				to_visit.push(task);
 				visited[task] = State::Queued;
@@ -93,7 +93,7 @@ impl BuildQueue {
 				n_phony += 1;
 			}
 			let mut n_deps = 0;
-			for dep in task_deps.into_iter() {
+			for dep in task_deps {
 				if visited[dep] == State::Unvisited {
 					to_visit.push(dep);
 					visited[dep] = State::Queued;
