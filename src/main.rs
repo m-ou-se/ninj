@@ -1,14 +1,15 @@
 mod graph;
 mod queue;
 
-use std::collections::BTreeMap;
 use self::graph::generate_graph;
+use self::queue::BuildQueue;
 use ninj::spec::{read, BuildRuleCommand};
 use raw_string::{RawStr, RawString};
+use std::collections::BTreeMap;
 use std::convert::AsRef;
+use std::path::PathBuf;
 use std::process::exit;
 use structopt::StructOpt;
-use self::queue::BuildQueue;
 
 #[derive(StructOpt)]
 struct Options {
@@ -101,9 +102,7 @@ fn main() {
 				}) {
 					match &spec.build_rules[task].command {
 						BuildRuleCommand::Phony => {}
-						BuildRuleCommand::Command {
-							description, ..
-						} => {
+						BuildRuleCommand::Command { description, .. } => {
 							print_status(i, format_args!("\x1b[33m{} ...", description));
 							std::thread::sleep(std::time::Duration::from_millis(2500 + i * 5123 % 2000));
 						}

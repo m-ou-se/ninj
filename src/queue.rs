@@ -77,11 +77,7 @@ impl BuildQueue {
 
 		// Remove phony nodes, and connect their inputs/outputs directly.
 		for &task in &tasks {
-			if deps[task]
-				.next
-				.iter()
-				.any(|&i| spec.build_rules[i].is_phony())
-			{
+			if deps[task].next.iter().any(|&i| spec.build_rules[i].is_phony()) {
 				let mut new_next = vec![];
 				unphony(spec, &deps, &mut new_next, &deps[task].next);
 				deps[task].next = new_next;
