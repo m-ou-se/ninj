@@ -48,6 +48,8 @@ pub enum BuildRuleCommand {
 
 	/// The command to generate the outputs from the inputs.
 	Command {
+		/// The name of the rule which was used for this build rule.
+		rule_name: String,
 		/// The (shell-escaped) command to be executed.
 		command: RawString,
 		/// The description to be shown to the user.

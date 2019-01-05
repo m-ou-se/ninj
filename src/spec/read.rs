@@ -181,6 +181,7 @@ fn read_into<'a: 'p, 'p>(
 
 					// And then the rest:
 					BuildRuleCommand::Command {
+						rule_name: rule_name.to_string(),
 						command: expand_var("command")?,
 						description: expand_var("description")?,
 						depfile: expand_var("depfile")?,
