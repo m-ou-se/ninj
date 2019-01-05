@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::exit;
 use structopt::StructOpt;
+use std::sync::{Condvar, Mutex};
 
 #[derive(StructOpt)]
 struct Options {
@@ -100,40 +101,100 @@ fn main() {
 
 	let n_threads = opt.n_threads;
 
-	eprintln!("Building:");
-	for _ in 0..n_threads {
-		println!("=> ");
+	#[derive(Debug,Clone,PartialEq)]
+	enum WorkerStatus {
+		Starting,
+		Idle,
+		Running{task: usize},
+		Done
 	}
-	let print_status = |i, args: std::fmt::Arguments| {
-		if i == n_threads - 1 {
-			eprint!("\x1b[A\x1b[3C{}\x1b[K\x1b[m\n", args);
-		} else {
-			eprint!("\x1b[{}A\x1b[3C{}\x1b[K\x1b[m\n\x1b[{}B", n_threads - i, args, n_threads - i - 1);
-		}
+
+	struct BuildStatusInner {
+		workers: Vec<WorkerStatus>,
+		dirty: bool,
+	}
+
+	struct BuildStatus {
+		inner: Mutex<BuildStatusInner>,
+		condvar: Condvar,
+	}
+
+	let status = BuildStatus{
+		inner: Mutex::new(BuildStatusInner{workers: vec![WorkerStatus::Starting; n_threads], dirty: true}),
+		condvar: Condvar::new(),
 	};
+
+	impl BuildStatus {
+		fn set_status(&self, worker: usize, status: WorkerStatus) {
+			let mut lock = self.inner.lock().unwrap();
+			lock.workers[worker] = status;
+			lock.dirty = true;
+			self.condvar.notify_all();
+		}
+	}
+
 	crossbeam::thread::scope(|scope| {
+		let mut lock = status.inner.lock().unwrap();
 		for i in 0..n_threads {
 			let queue = &queue;
 			let spec = &spec;
+			let status = &status;
 			scope.spawn(move |_| {
 				let mut lock = queue.lock();
 				while let Some(task) = lock.next().or_else(move || {
-					print_status(i, format_args!("\x1b[34mIdle"));
+					status.set_status(i, WorkerStatus::Idle);
 					lock.wait()
 				}) {
+					status.set_status(i, WorkerStatus::Running{task});
+
 					match &spec.build_rules[task].command {
 						BuildRuleCommand::Phony => {}
-						BuildRuleCommand::Command { description, .. } => {
-							print_status(i, format_args!("\x1b[33m{} ...", description));
-							std::thread::sleep(std::time::Duration::from_millis(2500 + i * 5123 % 2000));
+						BuildRuleCommand::Command { .. } => {
+							std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
 						}
 					}
 					lock = queue.lock();
 					lock.complete_task(task);
 				}
-				print_status(i, format_args!("\x1b[32mDone"));
+
+				status.set_status(i, WorkerStatus::Done);
 			});
 		}
+		println!("Building:");
+		loop {
+			while !lock.dirty {
+				lock = status.condvar.wait(lock).unwrap();
+			}
+			let workers = lock.workers.clone();
+			lock.dirty = false;
+			drop(lock);
+			for worker in &workers {
+				match worker {
+					WorkerStatus::Starting => {
+						println!("=> \x1b[34mStarting...\x1b[K\x1b[m");
+					}
+					WorkerStatus::Idle => {
+						println!("=> \x1b[34mIdle\x1b[K\x1b[m");
+					}
+					WorkerStatus::Done => {
+						println!("=> \x1b[32mDone\x1b[K\x1b[m");
+					}
+					WorkerStatus::Running { task } => {
+						match &spec.build_rules[*task].command {
+							BuildRuleCommand::Phony => {}
+							BuildRuleCommand::Command { description, .. } => {
+								println!("=> \x1b[33m{}...\x1b[K\x1b[m", description);
+							}
+						}
+					}
+				}
+			}
+			if workers.iter().all(|worker| *worker == WorkerStatus::Done ) {
+				break;
+			}
+			print!("\x1b[{}A", workers.len());
+			lock = status.inner.lock().unwrap();
+		}
 	}).unwrap();
-	eprintln!("\x1b[32;1mFinished.\x1b[m");
+	println!("\x1b[32;1mFinished.\x1b[m");
 }
