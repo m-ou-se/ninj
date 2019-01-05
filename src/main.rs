@@ -23,12 +23,16 @@ struct Options {
 	/// Run a subtool. Use -t list to list subtools.
 	#[structopt(short = "t")]
 	tool: Option<String>,
+
+	/// The build specification.
+	#[structopt(short = "f", default_value = "build.ninja")]
+	file: PathBuf,
 }
 
 fn main() {
 	let opt = Options::from_args();
 
-	let spec = read("build.ninja".as_ref()).unwrap_or_else(|e| {
+	let spec = read(&opt.file).unwrap_or_else(|e| {
 		eprintln!("{}", e);
 		exit(1);
 	});
