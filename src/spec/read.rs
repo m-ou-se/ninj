@@ -36,7 +36,7 @@ pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
 	})?;
 	let mut spec = Spec::new();
 	let mut scope = FileScope::new();
-	let mut pools = Vec::new();
+	let mut pools = vec![("console".to_string(), 1)];
 	read_into(file_name, &source, &pile, &mut spec, &mut scope, &mut pools)?;
 	if let Some(var) = scope
 		.vars
