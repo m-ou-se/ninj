@@ -75,7 +75,7 @@ fn main() {
 		})
 	}).collect();
 
-	let queue = BuildQueue::new(&spec, &target_to_rule, targets);
+	let queue = BuildQueue::new(&spec, &target_to_rule, targets).make_async();
 
 	let n_threads = 8;
 

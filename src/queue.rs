@@ -6,24 +6,33 @@ use std::sync::{Condvar, Mutex, MutexGuard};
 
 #[derive(Clone, Debug)]
 struct Deps {
-	next: Vec<usize>, // Build rules which depend on this build rule.
-	n_prev: usize,    // Number of unfinished build rules which have this rule in their `next` list.
-}
-
-struct BuildQueueInner {
-	deps: Vec<Deps>,
-	ready: Vec<usize>,
-	n_left: usize,
+	/// Build rules which depend on this build rule.
+	next: Vec<usize>,
+	/// Number of unfinished build rules which have this rule in their `next` list.
+	n_prev: usize,
 }
 
 pub struct BuildQueue {
-	inner: Mutex<BuildQueueInner>,
-	ready: Condvar,
+	/// Dependencies of build rules.
+	///
+	/// The index in this vector is their ID.
+	deps: Vec<Deps>,
+	/// The tasks which are ready to run.
+	ready: Vec<usize>,
+	/// Number of tasks which still need to be started.
+	n_left: usize,
+	/// Number of tasks which still need to be started, which are only phony tasks.
+	n_phony_left: usize,
 }
 
-pub struct BuildQueueLock<'a> {
-	guard: MutexGuard<'a, BuildQueueInner>,
-	ready: &'a Condvar,
+pub struct AsyncBuildQueue {
+	queue: Mutex<BuildQueue>,
+	condvar: Condvar,
+}
+
+pub struct LockedAsyncBuildQueue<'a> {
+	queue: MutexGuard<'a, BuildQueue>,
+	condvar: &'a Condvar,
 }
 
 impl BuildQueue {
@@ -43,7 +52,8 @@ impl BuildQueue {
 		];
 
 		let mut visited = vec![false; spec.build_rules.len()];
-		let mut tasks = Vec::new();
+		let mut n_tasks = 0;
+		let mut n_phony = 0;
 
 		let mut ready: Vec<usize> = Vec::new();
 
@@ -53,8 +63,9 @@ impl BuildQueue {
 		while let Some(task) = to_visit.pop_front() {
 			let rule = &spec.build_rules[task];
 			if !replace(&mut visited[task], true) {
-				if !rule.is_phony() {
-					tasks.push(task);
+				n_tasks += 1;
+				if rule.is_phony() {
+					n_phony += 1;
 				}
 				for input in &rule.inputs {
 					if let Some(&input) = target_to_rule.get(&input[..]) {
@@ -75,41 +86,65 @@ impl BuildQueue {
 
 		// TODO: Check for cycles.
 
-		// Remove phony nodes, and connect their inputs/outputs directly.
-		for &task in &tasks {
-			if deps[task].next.iter().any(|&i| spec.build_rules[i].is_phony()) {
-				let mut new_next = vec![];
-				unphony(spec, &deps, &mut new_next, &deps[task].next);
-				deps[task].next = new_next;
-			}
-		}
-
 		BuildQueue {
-			inner: Mutex::new(BuildQueueInner {
-				deps,
-				ready,
-				n_left: tasks.len(),
-			}),
-			ready: Condvar::new(),
+			deps,
+			ready,
+			n_left: n_tasks,
+			n_phony_left: n_phony,
 		}
 	}
 
-	pub fn lock(&self) -> BuildQueueLock {
-		BuildQueueLock {
-			guard: self.inner.lock().unwrap(),
-			ready: &self.ready,
+	pub fn make_async(self) -> AsyncBuildQueue {
+		AsyncBuildQueue {
+			queue: Mutex::new(self),
+			condvar: Condvar::new(),
 		}
 	}
 }
 
-impl<'a> BuildQueueLock<'a> {
+impl AsyncBuildQueue {
+	pub fn lock(&self) -> LockedAsyncBuildQueue {
+		LockedAsyncBuildQueue {
+			queue: self.queue.lock().unwrap(),
+			condvar: &self.condvar,
+		}
+	}
+}
+
+impl BuildQueue {
 	/// Check if there is something to do right now.
 	pub fn next(&mut self) -> Option<usize> {
-		let next = self.guard.ready.pop();
+		let next = self.ready.pop();
 		if next.is_some() {
-			self.guard.n_left -= 1;
-			if self.guard.n_left == 0 {
-				self.ready.notify_all();
+			self.n_left -= 1;
+		}
+		next
+	}
+
+	/// Mark the task as ready, possibly queueing dependent tasks.
+	///
+	/// Returns the number of newly ready tasks that were unblocked by the
+	/// completion of this one.
+	pub fn complete_task(&mut self, task: usize) -> usize {
+		let mut newly_ready = 0;
+		for next in replace(&mut self.deps[task].next, Vec::new()) {
+			self.deps[next].n_prev -= 1;
+			if self.deps[next].n_prev == 0 {
+				self.ready.push(next);
+				newly_ready += 1;
+			}
+		}
+		newly_ready
+	}
+}
+
+impl<'a> LockedAsyncBuildQueue<'a> {
+	/// Check if there is something to do right now.
+	pub fn next(&mut self) -> Option<usize> {
+		let next = self.queue.next();
+		if next.is_some() {
+			if self.queue.n_left <= self.queue.n_phony_left {
+				self.condvar.notify_all();
 			}
 		}
 		next
@@ -119,32 +154,19 @@ impl<'a> BuildQueueLock<'a> {
 	///
 	/// Returns None when all tasks are finished.
 	pub fn wait(mut self) -> Option<usize> {
-		while self.guard.ready.is_empty() && self.guard.n_left > 0 {
-			self.guard = self.ready.wait(self.guard).unwrap();
+		while self.queue.ready.is_empty() && self.queue.n_left > self.queue.n_phony_left {
+			self.queue = self.condvar.wait(self.queue).unwrap();
 		}
 		self.next()
 	}
 
 	/// Mark the task as ready, unblocking dependent tasks.
 	pub fn complete_task(&mut self, task: usize) {
-		for next in replace(&mut self.guard.deps[task].next, Vec::new()) {
-			self.guard.deps[next].n_prev -= 1;
-			if self.guard.deps[next].n_prev == 0 {
-				self.guard.ready.push(next);
-				self.ready.notify_one();
-			}
-		}
-	}
-}
-
-// Copies `next` into `new_next`, replacing all phony tasks by their
-// (recursively 'unphonied') next tasks.
-fn unphony(spec: &Spec, deps: &[Deps], new_next: &mut Vec<usize>, next: &[usize]) {
-	for &next in next {
-		if spec.build_rules[next].is_phony() {
-			unphony(spec, deps, new_next, &deps[next].next);
-		} else {
-			new_next.push(next);
+		let n = self.queue.complete_task(task);
+		// TODO: In most cases we'll want to notify one time less, because this
+		// thread itself will also continue executing tasks.
+		for _ in 0..n {
+			self.condvar.notify_one();
 		}
 	}
 }
