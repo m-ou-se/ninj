@@ -74,7 +74,6 @@ fn main() {
 		})
 	});
 
-
 	let queue = BuildQueue::new(
 		spec.build_rules.len(),
 		targets,
