@@ -27,6 +27,10 @@ struct Options {
 	/// The build specification.
 	#[structopt(short = "f", default_value = "build.ninja")]
 	file: PathBuf,
+
+	/// Number of concurrent jobs.
+	#[structopt(short = "j", default_value = "8")]
+	n_threads: usize,
 }
 
 fn main() {
@@ -94,7 +98,7 @@ fn main() {
 		}
 	).make_async();
 
-	let n_threads = 8;
+	let n_threads = opt.n_threads;
 
 	eprintln!("Building:");
 	for _ in 0..n_threads {
