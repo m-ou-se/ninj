@@ -6,4 +6,6 @@ edition = "2018"
 
 [dependencies]
 pile = "0.1"
-raw-string = "^0.3.1"
+raw-string = "0.3.1"
+structopt = "0.2.14"
+crossbeam = "0.6.0"
