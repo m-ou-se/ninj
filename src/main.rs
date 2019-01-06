@@ -13,6 +13,8 @@ use structopt::StructOpt;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 use self::timeformat::MinSec;
+use raw_string::unix::RawStrExt;
+use std::os::unix::fs::MetadataExt;
 
 #[derive(StructOpt)]
 struct Options {
@@ -98,18 +100,42 @@ fn main() {
 		targets,
 		|task: usize| {
 			let rule = &spec.build_rules[task];
-			TaskInfo {
-				dependencies: rule.inputs.iter().flat_map(|input| {
-					if let Some(&input) = target_to_rule.get(&input[..]) {
-						Some(input)
-					} else {
-						println!("Need file: {:?}", input);
-						None
+
+			// Get the time of the oldest output.
+			let mut output_time = None;
+			let mut outdated = false;
+			for output in &rule.outputs {
+				if let Some(mtime) = mtime(output) {
+					if output_time.map_or(true, |m| m > mtime) {
+						output_time = Some(mtime);
 					}
-				}),
-				phony: rule.is_phony(),
-				outdated: true,
+				} else {
+					// This output doesn't even exist, so the task is definitely out of date.
+					output_time = None;
+					outdated = true;
+					break;
+				}
 			}
+
+			// Check all the inputs, and resolve dependencies.
+			let mut dependencies = Vec::new();
+			for input in &rule.inputs {
+				let dep = target_to_rule.get(&input[..]);
+				if let Some(&dep) = dep {
+					dependencies.push(dep);
+				}
+				if let Some(mtime) = mtime(input) {
+					if output_time.map_or(false, |m| m < mtime) {
+						outdated = true;
+					}
+				} else if dep.is_none() {
+					// The file does not exist, and no rule generates it.
+					eprintln!("Missing file {:?}", input);
+					exit(1);
+				}
+			}
+
+			TaskInfo { dependencies, phony: rule.is_phony(), outdated }
 		}
 	).make_async();
 
@@ -229,4 +255,15 @@ fn main() {
 		}
 	}).unwrap();
 	println!("\x1b[32;1mFinished.\x1b[m");
+}
+
+fn mtime(file: &RawStr) -> Option<i64> {
+	match std::fs::metadata(file.as_path()) {
+		Ok(meta) => Some(meta.mtime()),
+		Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
+		Err(e) => {
+			eprintln!("Unable to stat {:?}: {}", file, e);
+			exit(1);
+		}
+	}
 }
