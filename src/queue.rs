@@ -4,12 +4,35 @@ use std::time::{Instant, Duration};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
-	NotQueued,
-	Queued,
-	Ready,
-	Running(Instant),
-	Finished(Duration),
-	PhonyQueued,
+	/// The task does not appear in the dependency tree of the targets we want.
+	NotNeeded,
+	/// The task does appear in the dependency tree, but we don't know anything
+	/// about the task yet.
+	///
+	/// Only happens while we're building the dependency tree.
+	WillBeNeeded,
+	/// The task appears in the dependency tree.
+	///
+	/// If `n_deps_left` is zero, it is ready to be run.
+	///
+	/// If it is not outdated, it does not need to run.
+	/// It might be marked as outdated later.
+	Needed {
+		phony: bool,
+		outdated: bool,
+	},
+	/// The task is running.
+	Running {
+		start_time: Instant,
+	},
+	/// The task is finished.
+	Finished {
+		running_time: Duration,
+		was_outdated: bool,
+	},
+	/// The task was not run but can be considered 'finished', as it was not outdated.
+	NotRun,
+	/// The task is phony, and is fulfilled.
 	PhonyFinished,
 }
 
@@ -32,7 +55,9 @@ pub struct BuildQueue {
 	tasks: Vec<Task>,
 	/// The tasks which are ready to run, will never contain phony tasks.
 	ready: Vec<usize>,
-	/// Number of (non-phony) tasks which still need to be started.
+	/// Number of non-phony tasks which still need to be started.
+	///
+	/// Includes tasks which are not oudated, but might turn out to be outdated later.
 	n_left: usize,
 }
 
@@ -44,6 +69,12 @@ pub struct AsyncBuildQueue {
 pub struct LockedAsyncBuildQueue<'a> {
 	queue: MutexGuard<'a, BuildQueue>,
 	condvar: &'a Condvar,
+}
+
+pub struct TaskInfo<T: IntoIterator<Item=usize>> {
+	pub phony: bool,
+	pub dependencies: T,
+	pub outdated: bool,
 }
 
 impl BuildQueue {
@@ -63,58 +94,65 @@ impl BuildQueue {
 		mut get_task: F,
 	) -> BuildQueue
 		where
-			F: FnMut(usize) -> (D, bool),
+			F: FnMut(usize) -> TaskInfo<D>,
 			D: IntoIterator<Item=usize>,
 	{
 
 		let mut tasks = vec![
 			Task {
-				status: TaskStatus::NotQueued,
+				status: TaskStatus::NotNeeded,
 				next: vec![],
 				n_deps_left: 0,
 			};
 			max_task_num
 		];
 
-		let mut ready = Vec::new();
-		let mut phony_finished = Vec::new();
-
-		let mut n_tasks = 0;
-
-		let mut to_visit = Vec::<usize>::new();
+		let mut to_visit = Vec::new();
 
 		for task in targets {
-			if tasks[task].status == TaskStatus::NotQueued {
+			if tasks[task].status == TaskStatus::NotNeeded {
 				to_visit.push(task);
-				tasks[task].status = TaskStatus::Queued;
+				tasks[task].status = TaskStatus::WillBeNeeded;
 			}
 		}
 
+		let mut n_tasks = 0;
+		let mut finished = Vec::new();
+		let mut ready = Vec::new();
+
 		// Build dependency graph
 		while let Some(task) = to_visit.pop() {
-			let (task_deps, phony) = get_task(task);
-			if phony {
-				tasks[task].status = TaskStatus::PhonyQueued;
-			} else {
-				n_tasks += 1;
-			}
+			assert_eq!(tasks[task].status, TaskStatus::WillBeNeeded);
+			let info = get_task(task);
 			let mut n_deps = 0;
-			for dep in task_deps {
-				if tasks[dep].status == TaskStatus::NotQueued {
+			for dep in info.dependencies {
+				if tasks[dep].status == TaskStatus::NotNeeded {
 					to_visit.push(dep);
-					tasks[dep].status = TaskStatus::Queued;
+					tasks[dep].status = TaskStatus::WillBeNeeded;
 				}
 				n_deps += 1;
 				tasks[dep].next.push(task);
 			}
+			tasks[task].status = TaskStatus::Needed {
+				phony: info.phony,
+				outdated: info.outdated,
+			};
+			if !info.phony {
+				n_tasks += 1;
+			}
 			tasks[task].n_deps_left = n_deps;
 			if n_deps == 0 {
-				if phony {
-					phony_finished.push(task);
+				if !info.outdated {
+					if !info.phony {
+						n_tasks -= 1;
+					}
+					tasks[task].status = TaskStatus::NotRun;
+					finished.push(task);
+				} else if info.phony {
 					tasks[task].status = TaskStatus::PhonyFinished;
+					finished.push(task);
 				} else {
 					ready.push(task);
-					tasks[task].status = TaskStatus::Ready;
 				}
 			}
 		}
@@ -127,8 +165,8 @@ impl BuildQueue {
 
 		// Mark any ready phony tasks as finished, and update the tasks
 		// dependent on it.
-		while let Some(task) = phony_finished.pop() {
-			queue.update_next_tasks_for_finished_task(task, &mut phony_finished);
+		while let Some(task) = finished.pop() {
+			queue.update_next_tasks_for_finished_task(task, &mut finished);
 		}
 
 		// TODO: Check for cycles.
@@ -152,9 +190,10 @@ impl BuildQueue {
 	pub fn next(&mut self) -> Option<usize> {
 		let next = self.ready.pop();
 		if let Some(next) = next {
-			self.tasks[next].status = match &self.tasks[next].status {
-				TaskStatus::Ready => TaskStatus::Running(Instant::now()),
-				_ => panic!("Task {} was in the ready list, but was not ready: {:?}", next, self.tasks[next]),
+			assert_eq!(self.tasks[next].n_deps_left, 0);
+			assert_eq!(self.tasks[next].status, TaskStatus::Needed { phony: false, outdated: true });
+			self.tasks[next].status = TaskStatus::Running {
+				start_time: Instant::now()
 			};
 			self.n_left -= 1;
 		}
@@ -165,16 +204,19 @@ impl BuildQueue {
 	///
 	/// Returns the number of newly ready tasks that were unblocked by the
 	/// completion of this one.
-	pub fn complete_task(&mut self, task: usize) -> usize {
+	pub fn complete_task(&mut self, task: usize, was_outdated: bool) -> usize {
 		self.tasks[task].status = match &self.tasks[task].status {
-			TaskStatus::Running(starttime) => TaskStatus::Finished(starttime.elapsed()),
+			TaskStatus::Running { start_time } => TaskStatus::Finished {
+				running_time: start_time.elapsed(),
+				was_outdated,
+			},
 			_ => panic!("complete_task({}) on task that isn't Running or PhonyQueued: {:?}", task, self.tasks[task]),
 		};
 		let mut newly_ready = 0;
-		let mut phony_finished = Vec::new();
-		newly_ready += self.update_next_tasks_for_finished_task(task, &mut phony_finished);
-		while let Some(task) = phony_finished.pop() {
-			newly_ready += self.update_next_tasks_for_finished_task(task, &mut phony_finished);
+		let mut newly_finished = Vec::new();
+		newly_ready += self.update_next_tasks_for_finished_task(task, &mut newly_finished);
+		while let Some(task) = newly_finished.pop() {
+			newly_ready += self.update_next_tasks_for_finished_task(task, &mut newly_finished);
 		}
 		newly_ready
 	}
@@ -184,24 +226,43 @@ impl BuildQueue {
 	///
 	/// Returns the amount of newly ready tasks.
 	///
-	/// Adds any now finished phony tasks to `phony_finished`.
-	fn update_next_tasks_for_finished_task(&mut self, task: usize, phony_finished: &mut Vec<usize>) -> usize {
+	/// Adds any now finished (phony and up-to-date) tasks to `newly_finished`.
+	fn update_next_tasks_for_finished_task(&mut self, task: usize, newly_finished: &mut Vec<usize>) -> usize {
+		let was_outdated = match &self.tasks[task].status {
+			TaskStatus::NotRun => false,
+			TaskStatus::PhonyFinished => true,
+			TaskStatus::Finished{ was_outdated, .. } => *was_outdated,
+			_ => unreachable!("Task {} was not finished: {:?}", task, self.tasks[task]),
+		};
 		let mut newly_ready = 0;
 		for next in replace(&mut self.tasks[task].next, Vec::new()) {
+			let next_phony;
+			let next_outdated;
+			match &mut self.tasks[next].status {
+				TaskStatus::Needed { phony, outdated } => {
+					if was_outdated {
+						*outdated = true;
+					}
+					next_phony = *phony;
+					next_outdated = *outdated;
+				}
+				_ => unreachable!("Task {} in `next' list was not `Needed': {:?}", next, self.tasks[next]),
+			}
 			self.tasks[next].n_deps_left -= 1;
 			if self.tasks[next].n_deps_left == 0 {
-				match self.tasks[next].status {
-					TaskStatus::Queued => {
-						self.tasks[next].status = TaskStatus::Ready;
-						self.ready.push(next);
-						newly_ready += 1;
+				if !next_outdated {
+					if !next_phony {
+						self.n_left -= 1;
 					}
-					TaskStatus::PhonyQueued => {
-						// Phony tasks are instantly finished, as they have no work to do.
-						self.tasks[next].status = TaskStatus::PhonyFinished;
-						phony_finished.push(next);
-					}
-					_ => panic!("By finishing task {}, task {} got ready even though it was not in queued state: {:?}", task, next, self.tasks[next]),
+					self.tasks[next].status = TaskStatus::NotRun;
+					newly_finished.push(next);
+				} else if next_phony {
+					// Phony tasks are instantly finished, as they have no work to do.
+					self.tasks[next].status = TaskStatus::PhonyFinished;
+					newly_finished.push(next);
+				} else {
+					self.ready.push(next);
+					newly_ready += 1;
 				}
 			}
 		}
@@ -248,12 +309,16 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 	}
 
 	/// Mark the task as ready, unblocking dependent tasks.
-	pub fn complete_task(&mut self, task: usize) {
-		let n = self.queue.complete_task(task);
+	pub fn complete_task(&mut self, task: usize, was_outdated: bool) {
+		let n = self.queue.complete_task(task, was_outdated);
 		// TODO: In most cases we'll want to notify one time less, because this
 		// thread itself will also continue executing tasks.
-		for _ in 0..n {
-			self.condvar.notify_one();
+		if self.queue.n_left == 0 {
+			self.condvar.notify_all();
+		} else {
+			for _ in 0..n {
+				self.condvar.notify_one();
+			}
 		}
 	}
 

@@ -3,7 +3,7 @@ mod queue;
 mod timeformat;
 
 use self::graph::generate_graph;
-use self::queue::{BuildQueue, TaskStatus};
+use self::queue::{BuildQueue, TaskStatus, TaskInfo};
 use ninj::spec::{read, BuildRuleCommand};
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
@@ -98,8 +98,8 @@ fn main() {
 		targets,
 		|task: usize| {
 			let rule = &spec.build_rules[task];
-			(
-				rule.inputs.iter().flat_map(|input| {
+			TaskInfo {
+				dependencies: rule.inputs.iter().flat_map(|input| {
 					if let Some(&input) = target_to_rule.get(&input[..]) {
 						Some(input)
 					} else {
@@ -107,8 +107,9 @@ fn main() {
 						None
 					}
 				}),
-				rule.is_phony()
-			)
+				phony: rule.is_phony(),
+				outdated: true,
+			}
 		}
 	).make_async();
 
@@ -169,7 +170,7 @@ fn main() {
 						}
 					}
 					lock = queue.lock();
-					lock.complete_task(task);
+					lock.complete_task(task, true);
 				}
 
 				status.set_status(i, WorkerStatus::Done);
@@ -205,8 +206,8 @@ fn main() {
 							BuildRuleCommand::Phony => {}
 							BuildRuleCommand::Command { description, .. } => {
 								let statustext = match queuestate.get_task_status(*task) {
-									TaskStatus::Running(starttime) => {
-										format!("{}", MinSec::since(starttime))
+									TaskStatus::Running { start_time } => {
+										format!("{}", MinSec::since(start_time))
 									},
 									x => {
 										format!("{:?}", x)
