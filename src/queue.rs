@@ -1,8 +1,20 @@
 use std::mem::replace;
 use std::sync::{Condvar, Mutex, MutexGuard};
+use std::time::{Instant, Duration};
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TaskStatus {
+	NotQueued,
+	Queued,
+	Ready,
+	Running(Instant),
+	Finished(Duration)
+}
 
 #[derive(Clone, Debug)]
-struct Deps {
+pub struct Task {
+	/// Status of this task.
+	status: TaskStatus,
 	/// Build rules which depend on this build rule.
 	next: Vec<usize>,
 	/// Number of unfinished build rules which have this rule in their `next` list.
@@ -10,11 +22,12 @@ struct Deps {
 }
 
 /// A BuildQueue which knows in which order tasks may execute.
+#[derive(Clone)]
 pub struct BuildQueue {
-	/// Dependencies of build rules.
+	/// Information related to build rules.
 	///
 	/// The index in this vector is their ID.
-	deps: Vec<Deps>,
+	tasks: Vec<Task>,
 	/// The tasks which are ready to run.
 	ready: Vec<usize>,
 	/// Number of tasks which still need to be started.
@@ -37,9 +50,9 @@ impl BuildQueue {
 
 	/// Construct a new build dependency graph.
 	///
-	/// The (potiential) tasks are numbered 0 to `max_task_num`.
+	/// The (potential) tasks are numbered 0 to `max_task_num`.
 	///
-	/// `targets` are the tasks thad need to be executed.
+	/// `targets` are the tasks that need to be executed.
 	///
 	/// `get_task` is used to get the dependencies of a task and to see if a
 	/// task is phony. It is called exactly once for every task in the
@@ -54,8 +67,9 @@ impl BuildQueue {
 			D: IntoIterator<Item=usize>,
 	{
 
-		let mut deps = vec![
-			Deps {
+		let mut tasks = vec![
+			Task {
+				status: TaskStatus::NotQueued,
 				next: vec![],
 				n_deps_left: 0,
 			};
@@ -67,26 +81,17 @@ impl BuildQueue {
 		let mut n_tasks = 0;
 		let mut n_phony = 0;
 
-		#[derive(Copy, Clone, PartialEq, Eq)]
-		enum State {
-			Unvisited,
-			Queued,
-			Visited,
-		}
-
-		let mut visited = vec![State::Unvisited; max_task_num];
 		let mut to_visit = Vec::<usize>::new();
 
 		for task in targets {
-			if visited[task] == State::Unvisited {
+			if tasks[task].status == TaskStatus::NotQueued {
 				to_visit.push(task);
-				visited[task] = State::Queued;
+				tasks[task].status = TaskStatus::Queued;
 			}
 		}
 
 		// Build dependency graph
 		while let Some(task) = to_visit.pop() {
-			visited[task] = State::Visited;
 			let (task_deps, phony) = get_task(task);
 			n_tasks += 1;
 			if phony {
@@ -94,23 +99,24 @@ impl BuildQueue {
 			}
 			let mut n_deps = 0;
 			for dep in task_deps {
-				if visited[dep] == State::Unvisited {
+				if tasks[dep].status == TaskStatus::NotQueued {
 					to_visit.push(dep);
-					visited[dep] = State::Queued;
+					tasks[dep].status = TaskStatus::Queued;
 				}
 				n_deps += 1;
-				deps[dep].next.push(task);
+				tasks[dep].next.push(task);
 			}
-			deps[task].n_deps_left = n_deps;
+			tasks[task].n_deps_left = n_deps;
 			if n_deps == 0 {
 				ready.push(task);
+				tasks[task].status = TaskStatus::Ready;
 			}
 		}
 
 		// TODO: Check for cycles.
 
 		BuildQueue {
-			deps,
+			tasks,
 			ready,
 			n_left: n_tasks,
 			n_phony_left: n_phony,
@@ -129,7 +135,8 @@ impl BuildQueue {
 	/// Check if there is something to do right now.
 	pub fn next(&mut self) -> Option<usize> {
 		let next = self.ready.pop();
-		if next.is_some() {
+		if let Some(next) = next {
+			self.tasks[next].status = TaskStatus::Running(Instant::now());
 			self.n_left -= 1;
 		}
 		next
@@ -140,15 +147,24 @@ impl BuildQueue {
 	/// Returns the number of newly ready tasks that were unblocked by the
 	/// completion of this one.
 	pub fn complete_task(&mut self, task: usize) -> usize {
+		self.tasks[task].status = match &self.tasks[task].status {
+			TaskStatus::Running(starttime) => TaskStatus::Finished(starttime.elapsed()),
+			_ => panic!("complete_task({}) on task that isn't Running: {:?}", task, self.tasks[task]),
+		};
 		let mut newly_ready = 0;
-		for next in replace(&mut self.deps[task].next, Vec::new()) {
-			self.deps[next].n_deps_left -= 1;
-			if self.deps[next].n_deps_left == 0 {
+		for next in replace(&mut self.tasks[task].next, Vec::new()) {
+			self.tasks[next].n_deps_left -= 1;
+			if self.tasks[next].n_deps_left == 0 {
 				self.ready.push(next);
+				self.tasks[next].status = TaskStatus::Ready;
 				newly_ready += 1;
 			}
 		}
 		newly_ready
+	}
+
+	pub fn get_task_status(&self, task: usize) -> TaskStatus {
+		self.tasks[task].status
 	}
 }
 
@@ -191,5 +207,9 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 		for _ in 0..n {
 			self.condvar.notify_one();
 		}
+	}
+
+	pub fn clone_queue(&self) -> BuildQueue {
+		self.queue.clone()
 	}
 }

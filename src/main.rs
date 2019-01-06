@@ -1,8 +1,9 @@
 mod graph;
 mod queue;
+mod timeformat;
 
 use self::graph::generate_graph;
-use self::queue::BuildQueue;
+use self::queue::{BuildQueue, TaskStatus};
 use ninj::spec::{read, BuildRuleCommand};
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
@@ -10,6 +11,8 @@ use std::path::PathBuf;
 use std::process::exit;
 use structopt::StructOpt;
 use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
+use self::timeformat::MinSec;
 
 #[derive(StructOpt)]
 struct Options {
@@ -132,6 +135,8 @@ fn main() {
 		}
 	}
 
+	let starttime = Instant::now();
+
 	crossbeam::thread::scope(|scope| {
 		let mut lock = status.inner.lock().unwrap();
 		for i in 0..n_threads {
@@ -161,9 +166,18 @@ fn main() {
 		}
 		println!("Building:");
 		loop {
+			let mut now = Instant::now();
+			let waittime = starttime + Duration::from_secs((now - starttime).as_secs() + 1);
 			while !lock.dirty {
-				lock = status.condvar.wait(lock).unwrap();
+				if now >= waittime {
+					break;
+				}
+				lock = status.condvar.wait_timeout(lock, waittime - now).unwrap().0;
+				now = Instant::now();
 			}
+			let queuelock = queue.lock();
+			let queuestate = queuelock.clone_queue();
+			drop(queuelock);
 			let workers = lock.workers.clone();
 			lock.dirty = false;
 			drop(lock);
@@ -182,16 +196,25 @@ fn main() {
 						match &spec.build_rules[*task].command {
 							BuildRuleCommand::Phony => {}
 							BuildRuleCommand::Command { description, .. } => {
-								println!("=> \x1b[33m{}...\x1b[K\x1b[m", description);
+								let statustext = match queuestate.get_task_status(*task) {
+									TaskStatus::Running(starttime) => {
+										format!("{}", MinSec::since(starttime))
+									},
+									x => {
+										format!("{:?}", x)
+									}
+								};
+								println!("=> [{t}] \x1b[33m{d} ...\x1b[K\x1b[m", d=description, t=statustext);
 							}
 						}
 					}
 				}
 			}
+			println!("Building for {}...", MinSec::since(starttime));
 			if workers.iter().all(|worker| *worker == WorkerStatus::Done ) {
 				break;
 			}
-			print!("\x1b[{}A", workers.len());
+			print!("\x1b[{}A", workers.len() + 1);
 			lock = status.inner.lock().unwrap();
 		}
 	}).unwrap();
