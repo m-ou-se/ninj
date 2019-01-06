@@ -65,7 +65,7 @@ pub struct InvalidEscape;
 
 impl std::fmt::Display for InvalidEscape {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "Invalid $-escape (literal `$' is written as `$$')")
+		ParseError::InvalidEscape.fmt(f)
 	}
 }
 
