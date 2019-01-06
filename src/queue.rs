@@ -282,6 +282,10 @@ impl BuildQueue {
 	pub fn get_task_status(&self, task: usize) -> TaskStatus {
 		self.tasks[task].status
 	}
+
+	pub fn n_left(&self) -> usize {
+		self.n_left
+	}
 }
 
 impl AsyncBuildQueue {

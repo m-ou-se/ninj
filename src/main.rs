@@ -27,9 +27,14 @@ struct Options {
 	#[structopt(short = "C", parse(from_os_str))]
 	directory: Option<PathBuf>,
 
-	// /// Dry run: Don't actually any run commands, but pretend they succeed.
-	// #[structopt(short = "n")]
-	// dry_run: bool,
+	/// Dry run: Don't actually any run commands, but instead list what commands would be run.
+	#[structopt(short = "n")]
+	dry_run: bool,
+
+	/// Show command lines instead of descriptions. (Currently only in
+	/// combination with -n.)
+	#[structopt(short = "v")]
+	verbose: bool,
 
 	/// Sleep run: Instead of running commands, sleep a few seconds instead.
 	#[structopt(long = "sleep")]
@@ -102,7 +107,7 @@ fn main() {
 
 	let mut stat_cache = StatCache::new();
 
-	let queue = BuildQueue::new(
+	let mut queue = BuildQueue::new(
 		spec.build_rules.len(),
 		targets,
 		|task: usize| {
@@ -146,7 +151,28 @@ fn main() {
 
 			TaskInfo { dependencies, phony: rule.is_phony(), outdated }
 		}
-	).make_async();
+	);
+
+	if opt.dry_run {
+		let n_tasks = queue.n_left();
+		while let Some(task) = queue.next() {
+			let description = match &spec.build_rules[task].command {
+				BuildRuleCommand::Phony => unreachable!("Got phony task."),
+				BuildRuleCommand::Command { description, command, .. } => {
+					let label = if opt.verbose || description.is_empty() {
+						command
+					} else {
+						description
+					};
+					println!("[{}/{}] {}", n_tasks - queue.n_left(), n_tasks, label);
+				}
+			};
+			queue.complete_task(task, true);
+		}
+		exit(0);
+	}
+
+	let queue = queue.make_async();
 
 	let n_threads = opt.n_threads;
 
