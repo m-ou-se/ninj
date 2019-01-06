@@ -20,6 +20,10 @@ struct Options {
 	#[structopt(parse(from_str))]
 	targets: Vec<RawString>,
 
+	/// Change directory before doing anything else.
+	#[structopt(short = "C")]
+	directory: Option<PathBuf>,
+
 	// /// Dry run: Don't actually any run commands, but pretend they succeed.
 	// #[structopt(short = "n")]
 	// dry_run: bool,
@@ -39,6 +43,13 @@ struct Options {
 
 fn main() {
 	let opt = Options::from_args();
+
+	if let Some(dir) = opt.directory.as_ref() {
+		std::env::set_current_dir(dir).unwrap_or_else(|e| {
+			eprintln!("Unable to change directory to {:?}: {}", dir, e);
+			exit(1);
+		});
+	}
 
 	let spec = read(&opt.file).unwrap_or_else(|e| {
 		eprintln!("{}", e);
