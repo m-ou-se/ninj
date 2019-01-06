@@ -8,7 +8,9 @@ pub enum TaskStatus {
 	Queued,
 	Ready,
 	Running(Instant),
-	Finished(Duration)
+	Finished(Duration),
+	PhonyQueued,
+	PhonyFinished,
 }
 
 #[derive(Clone, Debug)]
@@ -28,12 +30,10 @@ pub struct BuildQueue {
 	///
 	/// The index in this vector is their ID.
 	tasks: Vec<Task>,
-	/// The tasks which are ready to run.
+	/// The tasks which are ready to run, will never contain phony tasks.
 	ready: Vec<usize>,
-	/// Number of tasks which still need to be started.
+	/// Number of (non-phony) tasks which still need to be started.
 	n_left: usize,
-	/// Number of tasks which still need to be started, which are only phony tasks.
-	n_phony_left: usize,
 }
 
 pub struct AsyncBuildQueue {
@@ -77,9 +77,9 @@ impl BuildQueue {
 		];
 
 		let mut ready = Vec::new();
+		let mut phony_finished = Vec::new();
 
 		let mut n_tasks = 0;
-		let mut n_phony = 0;
 
 		let mut to_visit = Vec::<usize>::new();
 
@@ -93,9 +93,10 @@ impl BuildQueue {
 		// Build dependency graph
 		while let Some(task) = to_visit.pop() {
 			let (task_deps, phony) = get_task(task);
-			n_tasks += 1;
 			if phony {
-				n_phony += 1;
+				tasks[task].status = TaskStatus::PhonyQueued;
+			} else {
+				n_tasks += 1;
 			}
 			let mut n_deps = 0;
 			for dep in task_deps {
@@ -108,19 +109,31 @@ impl BuildQueue {
 			}
 			tasks[task].n_deps_left = n_deps;
 			if n_deps == 0 {
-				ready.push(task);
-				tasks[task].status = TaskStatus::Ready;
+				if phony {
+					phony_finished.push(task);
+					tasks[task].status = TaskStatus::PhonyFinished;
+				} else {
+					ready.push(task);
+					tasks[task].status = TaskStatus::Ready;
+				}
 			}
+		}
+
+		let mut queue = BuildQueue {
+			tasks,
+			ready,
+			n_left: n_tasks,
+		};
+
+		// Mark any ready phony tasks as finished, and update the tasks
+		// dependent on it.
+		while let Some(task) = phony_finished.pop() {
+			queue.update_next_tasks_for_finished_task(task, &mut phony_finished);
 		}
 
 		// TODO: Check for cycles.
 
-		BuildQueue {
-			tasks,
-			ready,
-			n_left: n_tasks,
-			n_phony_left: n_phony,
-		}
+		queue
 	}
 
 	/// Turn the BuildQueue into an AsyncBuildQueue, which can be used from
@@ -133,10 +146,16 @@ impl BuildQueue {
 	}
 
 	/// Check if there is something to do right now.
+	///
+	/// Returns the index of the task. Will never return a phony tasks, as
+	/// those don't have any work to do.
 	pub fn next(&mut self) -> Option<usize> {
 		let next = self.ready.pop();
 		if let Some(next) = next {
-			self.tasks[next].status = TaskStatus::Running(Instant::now());
+			self.tasks[next].status = match &self.tasks[next].status {
+				TaskStatus::Ready => TaskStatus::Running(Instant::now()),
+				_ => panic!("Task {} was in the ready list, but was not ready: {:?}", next, self.tasks[next]),
+			};
 			self.n_left -= 1;
 		}
 		next
@@ -149,15 +168,41 @@ impl BuildQueue {
 	pub fn complete_task(&mut self, task: usize) -> usize {
 		self.tasks[task].status = match &self.tasks[task].status {
 			TaskStatus::Running(starttime) => TaskStatus::Finished(starttime.elapsed()),
-			_ => panic!("complete_task({}) on task that isn't Running: {:?}", task, self.tasks[task]),
+			_ => panic!("complete_task({}) on task that isn't Running or PhonyQueued: {:?}", task, self.tasks[task]),
 		};
+		let mut newly_ready = 0;
+		let mut phony_finished = Vec::new();
+		newly_ready += self.update_next_tasks_for_finished_task(task, &mut phony_finished);
+		while let Some(task) = phony_finished.pop() {
+			newly_ready += self.update_next_tasks_for_finished_task(task, &mut phony_finished);
+		}
+		newly_ready
+	}
+
+	/// Decrement the `n_deps_left` of all the tasks depending on this task,
+	/// and mark any newly ready tasks as ready.
+	///
+	/// Returns the amount of newly ready tasks.
+	///
+	/// Adds any now finished phony tasks to `phony_finished`.
+	fn update_next_tasks_for_finished_task(&mut self, task: usize, phony_finished: &mut Vec<usize>) -> usize {
 		let mut newly_ready = 0;
 		for next in replace(&mut self.tasks[task].next, Vec::new()) {
 			self.tasks[next].n_deps_left -= 1;
 			if self.tasks[next].n_deps_left == 0 {
-				self.ready.push(next);
-				self.tasks[next].status = TaskStatus::Ready;
-				newly_ready += 1;
+				match self.tasks[next].status {
+					TaskStatus::Queued => {
+						self.tasks[next].status = TaskStatus::Ready;
+						self.ready.push(next);
+						newly_ready += 1;
+					}
+					TaskStatus::PhonyQueued => {
+						// Phony tasks are instantly finished, as they have no work to do.
+						self.tasks[next].status = TaskStatus::PhonyFinished;
+						phony_finished.push(next);
+					}
+					_ => panic!("By finishing task {}, task {} got ready even though it was not in queued state: {:?}", task, next, self.tasks[next]),
+				}
 			}
 		}
 		newly_ready
@@ -179,10 +224,13 @@ impl AsyncBuildQueue {
 
 impl<'a> LockedAsyncBuildQueue<'a> {
 	/// Check if there is something to do right now.
+	///
+	/// Returns the index of the task. Will never return a phony tasks, as
+	/// those don't have any work to do.
 	pub fn next(&mut self) -> Option<usize> {
 		let next = self.queue.next();
 		if next.is_some() {
-			if self.queue.n_left <= self.queue.n_phony_left {
+			if self.queue.n_left == 0 {
 				self.condvar.notify_all();
 			}
 		}
@@ -193,7 +241,7 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 	///
 	/// Returns None when all tasks are finished.
 	pub fn wait(mut self) -> Option<usize> {
-		while self.queue.ready.is_empty() && self.queue.n_left > self.queue.n_phony_left {
+		while self.queue.ready.is_empty() && self.queue.n_left > 0 {
 			self.queue = self.condvar.wait(self.queue).unwrap();
 		}
 		self.next()
