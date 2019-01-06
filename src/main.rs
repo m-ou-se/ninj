@@ -197,12 +197,13 @@ fn main() {
 					if next.is_none() {
 						status.set_status(i, WorkerStatus::Idle);
 						next = queue.lock().wait();
-						if next.is_none() {
-							// There are no remaining jobs
-							break;
-						}
 					}
-					let task = next.unwrap();
+					let task = if let Some(task) = next {
+						task
+					} else {
+						// There are no remaining jobs
+						break;
+					};
 					status.set_status(i, WorkerStatus::Running{task});
 					let command = match &spec.build_rules[task].command {
 						BuildRuleCommand::Phony => unreachable!("Got phony task."),
