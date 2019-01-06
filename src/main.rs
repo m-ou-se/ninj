@@ -186,13 +186,19 @@ fn main() {
 			let status = &status;
 			scope.spawn(move |_| {
 				let mut lock = queue.lock();
-				while let Some(task) = lock.next().or_else(move || {
+				loop {
+					let mut next = lock.next();
 					drop(lock);
-					status.set_status(i, WorkerStatus::Idle);
-					queue.lock().wait()
-				}) {
+					if next.is_none() {
+						status.set_status(i, WorkerStatus::Idle);
+						next = queue.lock().wait();
+						if next.is_none() {
+							// There are no remaining jobs
+							break;
+						}
+					}
+					let task = next.unwrap();
 					status.set_status(i, WorkerStatus::Running{task});
-
 					match &spec.build_rules[task].command {
 						BuildRuleCommand::Phony => {}
 						BuildRuleCommand::Command { .. } => {
@@ -202,7 +208,6 @@ fn main() {
 					lock = queue.lock();
 					lock.complete_task(task, true);
 				}
-
 				status.set_status(i, WorkerStatus::Done);
 			});
 		}
