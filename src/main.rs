@@ -1,5 +1,6 @@
 mod graph;
 mod queue;
+mod statcache;
 mod timeformat;
 
 use self::graph::generate_graph;
@@ -14,7 +15,7 @@ use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 use self::timeformat::MinSec;
 use raw_string::unix::RawStrExt;
-use std::os::unix::fs::MetadataExt;
+use self::statcache::StatCache;
 
 #[derive(StructOpt)]
 struct Options {
@@ -95,6 +96,8 @@ fn main() {
 		})
 	});
 
+	let mut stat_cache = StatCache::new();
+
 	let queue = BuildQueue::new(
 		spec.build_rules.len(),
 		targets,
@@ -105,7 +108,7 @@ fn main() {
 			let mut output_time = None;
 			let mut outdated = false;
 			for output in &rule.outputs {
-				if let Some(mtime) = mtime(output) {
+				if let Some(mtime) = stat_cache.mtime(output.as_path()) {
 					if output_time.map_or(true, |m| m > mtime) {
 						output_time = Some(mtime);
 					}
@@ -124,7 +127,7 @@ fn main() {
 				if let Some(&dep) = dep {
 					dependencies.push(dep);
 				}
-				if let Some(mtime) = mtime(input) {
+				if let Some(mtime) = stat_cache.mtime(input.as_path()) {
 					if output_time.map_or(false, |m| m < mtime) {
 						outdated = true;
 					}
@@ -255,15 +258,4 @@ fn main() {
 		}
 	}).unwrap();
 	println!("\x1b[32;1mFinished.\x1b[m");
-}
-
-fn mtime(file: &RawStr) -> Option<i64> {
-	match std::fs::metadata(file.as_path()) {
-		Ok(meta) => Some(meta.mtime()),
-		Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
-		Err(e) => {
-			eprintln!("Unable to stat {:?}: {}", file, e);
-			exit(1);
-		}
-	}
 }
