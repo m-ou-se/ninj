@@ -1,16 +1,18 @@
 use std::time::{Instant, Duration};
 
-pub struct MinSec(u64);
+pub struct MinSec(Duration);
 
 impl std::fmt::Display for MinSec {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{m}:{s:02}", m=self.0 / 60, s=self.0 % 60)
+		let secs = self.0.as_secs();
+		let msecs = self.0.subsec_millis();
+		write!(f, "{}:{:02}.{}", secs / 60, secs % 60, msecs / 100)
 	}
 }
 
 impl MinSec {
 	pub fn from_duration(d: Duration) -> Self {
-		MinSec(d.as_secs())
+		MinSec(d)
 	}
 
 	pub fn since(i: Instant) -> Self {

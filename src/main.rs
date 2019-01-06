@@ -167,11 +167,8 @@ fn main() {
 		println!("Building:");
 		loop {
 			let mut now = Instant::now();
-			let waittime = starttime + Duration::from_secs((now - starttime).as_secs() + 1);
-			while !lock.dirty {
-				if now >= waittime {
-					break;
-				}
+			let waittime = now + Duration::from_millis(100);
+			while !lock.dirty && now < waittime {
 				lock = status.condvar.wait_timeout(lock, waittime - now).unwrap().0;
 				now = Instant::now();
 			}
