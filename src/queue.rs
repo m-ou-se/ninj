@@ -41,7 +41,7 @@ pub struct Task {
 	/// Status of this task.
 	status: TaskStatus,
 	/// Build rules which depend on this build rule.
-	next: Vec<usize>,
+	next: Vec<DepInfo>,
 	/// Number of unfinished build rules which have this rule in their `next` list.
 	n_deps_left: usize,
 }
@@ -71,7 +71,14 @@ pub struct LockedAsyncBuildQueue<'a> {
 	condvar: &'a Condvar,
 }
 
-pub struct TaskInfo<T: IntoIterator<Item=usize>> {
+#[derive(Debug, Clone, Copy)]
+pub struct DepInfo {
+	pub task: usize,
+	pub order_only: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TaskInfo<T: IntoIterator<Item=DepInfo>> {
 	pub phony: bool,
 	pub dependencies: T,
 	pub outdated: bool,
@@ -95,7 +102,7 @@ impl BuildQueue {
 	) -> BuildQueue
 		where
 			F: FnMut(usize) -> TaskInfo<D>,
-			D: IntoIterator<Item=usize>,
+			D: IntoIterator<Item=DepInfo>,
 	{
 
 		let mut tasks = vec![
@@ -126,12 +133,15 @@ impl BuildQueue {
 			let info = get_task(task);
 			let mut n_deps = 0;
 			for dep in info.dependencies {
-				if tasks[dep].status == TaskStatus::NotNeeded {
-					to_visit.push(dep);
-					tasks[dep].status = TaskStatus::WillBeNeeded;
+				if tasks[dep.task].status == TaskStatus::NotNeeded {
+					to_visit.push(dep.task);
+					tasks[dep.task].status = TaskStatus::WillBeNeeded;
 				}
 				n_deps += 1;
-				tasks[dep].next.push(task);
+				tasks[dep.task].next.push(DepInfo {
+					task,
+					order_only: dep.order_only,
+				});
 			}
 			tasks[task].status = TaskStatus::Needed {
 				phony: info.phony,
@@ -235,12 +245,12 @@ impl BuildQueue {
 			_ => unreachable!("Task {} was not finished: {:?}", task, self.tasks[task]),
 		};
 		let mut newly_ready = 0;
-		for next in replace(&mut self.tasks[task].next, Vec::new()) {
+		for DepInfo { task: next, order_only } in replace(&mut self.tasks[task].next, Vec::new()) {
 			let next_phony;
 			let next_outdated;
 			match &mut self.tasks[next].status {
 				TaskStatus::Needed { phony, outdated } => {
-					if was_outdated {
+					if was_outdated && !order_only {
 						*outdated = true;
 					}
 					next_phony = *phony;

@@ -4,7 +4,7 @@ mod statcache;
 mod timeformat;
 
 use self::graph::generate_graph;
-use self::queue::{BuildQueue, TaskStatus, TaskInfo};
+use self::queue::{BuildQueue, DepInfo, TaskStatus, TaskInfo};
 use ninj::spec::{read, BuildRuleCommand};
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
@@ -126,16 +126,18 @@ fn main() {
 
 			// Check all the inputs, and resolve dependencies.
 			let mut dependencies = Vec::new();
-			for input in &rule.inputs {
-				let dep = target_to_rule.get(&input[..]);
-				if let Some(&dep) = dep {
-					dependencies.push(dep);
+			for (input, order_only) in rule.inputs.iter().map(|p| (p, false))
+				.chain(rule.order_deps.iter().map(|p| (p, true)))
+			{
+				let task = target_to_rule.get(&input[..]);
+				if let Some(&task) = task {
+					dependencies.push(DepInfo { task: task, order_only });
 				}
 				if let Some(mtime) = stat_cache.mtime(input.as_path()) {
 					if output_time.map_or(false, |m| m < mtime) {
 						outdated = true;
 					}
-				} else if dep.is_none() {
+				} else if task.is_none() {
 					// The file does not exist, and no rule generates it.
 					eprintln!("Missing file {:?}", input);
 					exit(1);
