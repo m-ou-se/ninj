@@ -158,8 +158,9 @@ fn main() {
 			scope.spawn(move |_| {
 				let mut lock = queue.lock();
 				while let Some(task) = lock.next().or_else(move || {
+					drop(lock);
 					status.set_status(i, WorkerStatus::Idle);
-					lock.wait()
+					queue.lock().wait()
 				}) {
 					status.set_status(i, WorkerStatus::Running{task});
 
