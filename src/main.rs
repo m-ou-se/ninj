@@ -31,6 +31,10 @@ struct Options {
 	// #[structopt(short = "n")]
 	// dry_run: bool,
 
+	/// Sleep run: Instead of running commands, sleep a few seconds instead.
+	#[structopt(long = "sleep")]
+	sleep_run: bool,
+
 	/// Run a subtool. Use -t list to list subtools.
 	#[structopt(short = "t")]
 	tool: Option<String>,
@@ -184,6 +188,7 @@ fn main() {
 			let queue = &queue;
 			let spec = &spec;
 			let status = &status;
+			let opt = &opt;
 			scope.spawn(move |_| {
 				let mut lock = queue.lock();
 				loop {
@@ -199,10 +204,33 @@ fn main() {
 					}
 					let task = next.unwrap();
 					status.set_status(i, WorkerStatus::Running{task});
-					match &spec.build_rules[task].command {
-						BuildRuleCommand::Phony => {}
-						BuildRuleCommand::Command { .. } => {
-							std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
+					let command = match &spec.build_rules[task].command {
+						BuildRuleCommand::Phony => unreachable!("Got phony task."),
+						BuildRuleCommand::Command { command, .. } => {
+							command
+						}
+					};
+					if opt.sleep_run {
+						std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
+					} else {
+						let status = std::process::Command::new("sh")
+							.arg("-c")
+							.arg(command.as_osstr())
+							.status()
+							.unwrap_or_else(|e| {
+								eprintln!("Unable to spawn sh process: {}", e);
+								exit(1);
+							});
+						match status.code() {
+							Some(0) => {},
+							Some(x) => {
+								eprintln!("Exited with status code {}: {}", x, command);
+								exit(1);
+							}
+							None => {
+								eprintln!("Exited with signal: {}", command);
+								exit(1);
+							}
 						}
 					}
 					lock = queue.lock();
@@ -211,7 +239,7 @@ fn main() {
 				status.set_status(i, WorkerStatus::Done);
 			});
 		}
-		println!("Building:");
+		println!("{}:", if opt.sleep_run { "Sleeping" } else { "Building" });
 		loop {
 			let mut now = Instant::now();
 			let waittime = now + Duration::from_millis(100);
