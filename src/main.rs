@@ -156,7 +156,7 @@ fn main() {
 	if opt.dry_run {
 		let n_tasks = queue.n_left();
 		while let Some(task) = queue.next() {
-			let description = match &spec.build_rules[task].command {
+			match &spec.build_rules[task].command {
 				BuildRuleCommand::Phony => unreachable!("Got phony task."),
 				BuildRuleCommand::Command { description, command, .. } => {
 					let label = if opt.verbose || description.is_empty() {
