@@ -21,7 +21,7 @@ struct Options {
 	targets: Vec<RawString>,
 
 	/// Change directory before doing anything else.
-	#[structopt(short = "C")]
+	#[structopt(short = "C", parse(from_os_str))]
 	directory: Option<PathBuf>,
 
 	// /// Dry run: Don't actually any run commands, but pretend they succeed.
@@ -33,7 +33,7 @@ struct Options {
 	tool: Option<String>,
 
 	/// The build specification.
-	#[structopt(short = "f", default_value = "build.ninja")]
+	#[structopt(short = "f", default_value = "build.ninja", parse(from_os_str))]
 	file: PathBuf,
 
 	/// Number of concurrent jobs.
