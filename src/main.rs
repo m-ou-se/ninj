@@ -119,7 +119,7 @@ fn main() {
 				}
 			}
 			"list" => {
-				println!("Subtools:\n\tdeps\ngraph");
+				println!("Subtools:\n\tdeps\n\tgraph");
 			}
 			x => {
 				eprintln!("Unknown subtool {:?}.", x);
