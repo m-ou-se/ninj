@@ -83,10 +83,12 @@ fn main() {
 			}
 		}
 	}
+	println!("Done");
 
 	let deps_file = Deps::read(spec.build_dir.as_path().join(".ninja_deps")).unwrap_or_else(|e| {
 		eprintln!("Error while reading .ninja_deps: {}", e);
-		exit(1);
+		eprintln!("Not using .ninja_deps.");
+		Deps::new()
 	});
 
 	if let Some(tool) = opt.tool {

@@ -25,6 +25,12 @@ pub struct Deps {
 }
 
 impl Deps {
+	pub fn new() -> Self {
+		Deps {
+			records: Vec::new()
+		}
+	}
+
 	pub fn read(file: impl AsRef<Path>) -> Result<Deps, std::io::Error> {
 		Deps::read_from(File::open(file)?)
 	}
