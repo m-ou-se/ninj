@@ -11,7 +11,7 @@ pub fn eat_whitespace(src: &mut &RawStr) -> usize {
 }
 
 pub fn is_identifier_char(c: u8) -> bool {
-	c.is_ascii_alphanumeric() || c == b'_' || c == b'-'
+	c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'.'
 }
 
 pub fn eat_identifier<'a>(src: &mut &'a RawStr) -> Option<&'a str> {
