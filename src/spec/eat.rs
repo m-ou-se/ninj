@@ -3,23 +3,10 @@ use super::expand::check_escapes;
 use raw_string::RawStr;
 use std::str::from_utf8_unchecked;
 
-// Eats whitespace. Returns the amount of space eaten (tabs count for 8).
-pub fn eat_whitespace(src: &mut &RawStr) -> i32 {
-	let mut n = 0;
-	let whitespace_end = src
-		.bytes()
-		.position(|c| match c {
-			b' ' => {
-				n += 1;
-				false
-			}
-			b'\t' => {
-				n += 8;
-				false
-			}
-			_ => true,
-		}).unwrap_or(src.len());
-	*src = &src[whitespace_end..];
+// Eats whitespace. Returns the amount of space eaten.
+pub fn eat_whitespace(src: &mut &RawStr) -> usize {
+	let n = src.bytes().position(|c| c != b' ').unwrap_or(src.len());
+	*src = &src[n..];
 	n
 }
 

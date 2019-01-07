@@ -80,7 +80,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 	/// amount of indentation it has.
 	///
 	/// Calling `next_line` will then give the line without the indentation.
-	fn next_indent(&mut self) -> i32 {
+	fn next_indent(&mut self) -> usize {
 		loop {
 			let indent = eat_whitespace(&mut self.source);
 			if self.source.starts_with("#") {

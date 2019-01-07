@@ -174,7 +174,7 @@ fn expand_str_to<S: VarScope>(
 		} else if source.starts_with("\n") {
 			// Escaped newline: "$\n"
 			source = &source[1..]; // Skip the newline itself first.
-			let n = source.bytes().position(|b| b != b' ' && b != b'\t').unwrap_or(source.len());
+			let n = source.bytes().position(|b| b != b' ').unwrap_or(source.len());
 			source = &source[n..]; // Then skip any the indentation.
 		} else if source.starts_with("$") {
 			// Escaped dollar sign: "$$"
