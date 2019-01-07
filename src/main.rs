@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use structopt::StructOpt;
 use std::sync::{Condvar, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use self::timeformat::MinSec;
 use raw_string::unix::RawStrExt;
 use self::statcache::StatCache;
@@ -76,7 +76,6 @@ fn main() {
 	};
 
 	let mut target_to_rule = BTreeMap::<&RawStr, usize>::new();
-
 	for (rule_i, rule) in spec.build_rules.iter().enumerate() {
 		for output in &rule.outputs {
 			if target_to_rule.insert(&output, rule_i).is_some() {
@@ -85,35 +84,32 @@ fn main() {
 		}
 	}
 
+	let deps_file = Deps::read(spec.build_dir.as_path().join(".ninja_deps")).unwrap_or_else(|e| {
+		eprintln!("Error while reading .ninja_deps: {}", e);
+		exit(1);
+	});
+
 	if let Some(tool) = opt.tool {
 		match &tool[..] {
 			"graph" => generate_graph(&spec),
 			"deps" => {
-				match Deps::read(spec.build_dir.as_path().join(".ninja_deps")) {
-					Err(e) => {
-						eprintln!("Error while reading .ninja_deps: {}", e);
-						exit(1);
-					}
-					Ok(deps_file) => {
-						for record in &deps_file.records {
-							if let Some(deps) = &record.deps {
-								if target_to_rule.contains_key(&record.path[..]) {
-									let mtime = || std::fs::metadata(record.path.as_path()).and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
-									let deps_mtime = SystemTime::UNIX_EPOCH + Duration::from_nanos(deps.mtime);
-									println!(
-										"{}: #deps {}, deps mtime {}.{:09} ({})",
-										record.path,
-										deps.deps.len(),
-										deps.mtime / 1_000_000_000,
-										deps.mtime % 1_000_000_000,
-										if deps.mtime == 0 || deps_mtime < mtime() { "STALE" } else { "VALID" }
-									);
-									for &dep in &deps.deps {
-										println!("    {}", deps_file.records[dep as usize].path);
-									}
-									println!();
-								}
+				for record in &deps_file.records {
+					if let Some(deps) = &record.deps {
+						if target_to_rule.contains_key(&record.path[..]) {
+							let mtime = || std::fs::metadata(record.path.as_path()).and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
+							let deps_mtime = UNIX_EPOCH + Duration::from_nanos(deps.mtime);
+							println!(
+								"{}: #deps {}, deps mtime {}.{:09} ({})",
+								record.path,
+								deps.deps.len(),
+								deps.mtime / 1_000_000_000,
+								deps.mtime % 1_000_000_000,
+								if deps.mtime == 0 || deps_mtime < mtime() { "STALE" } else { "VALID" }
+							);
+							for &dep in &deps.deps {
+								println!("    {}", deps_file.records[dep as usize].path);
 							}
+							println!();
 						}
 					}
 				}
