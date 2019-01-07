@@ -7,24 +7,23 @@ use raw_string::{RawStr, RawString};
 
 /// Check if the given string contains only valid escape sequences.
 pub fn check_escapes(src: &RawStr) -> Result<(), InvalidEscape> {
-	let mut iter = src.bytes();
-	while let Some(c) = iter.next() {
-		if c == b'$' {
-			match iter.next() {
-				Some(b'\n') => (),
-				Some(b' ') => (),
-				Some(b':') => (),
-				Some(b'$') => (),
-				Some(x) if is_identifier_char(x) => (),
-				Some(b'{') => {
-					while match iter.next() {
-						Some(x) if is_identifier_char(x) => true,
-						Some(b'}') => false,
+	let mut i = 0;
+	while let Some(n) = memchr::memchr(b'$', &src.as_bytes()[i..]) {
+		i += n + 1;
+		match src.get(i) {
+			Some(b'\n') | Some(b' ') | Some(b':') | Some(b'$') => i += 1,
+			Some(x) if is_identifier_char(*x) => i += 1,
+			Some(b'{') => {
+				loop {
+					match src.get(i + 1) {
+						Some(x) if is_identifier_char(*x) => i += 1,
+						Some(b'}') => break,
 						_ => return Err(InvalidEscape),
-					} {}
+					}
 				}
-				_ => return Err(InvalidEscape),
+				i += 1;
 			}
+			_ => return Err(InvalidEscape),
 		}
 	}
 	Ok(())
@@ -85,7 +84,7 @@ pub(super) fn expand_strs_into<S: VarScope>(
 	Ok(())
 }
 
-fn is_shell_safe(c: &u8) -> bool {
+fn is_shell_safe(c: u8) -> bool {
 	match c {
 		b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' => true,
 		b'_' | b'-' | b'+' | b'/' | b'.' => true,
@@ -94,16 +93,22 @@ fn is_shell_safe(c: &u8) -> bool {
 }
 
 fn write_shell_escaped_to(source: &RawStr, output: &mut RawString) {
-	for (i, part) in source.as_bytes().split(|&b| b == b'\'').enumerate() {
-		if i > 0 {
-			output.push_str("\\\'");
-		}
-		if part.iter().all(is_shell_safe) {
+	let mut i = 0;
+	loop {
+		let next_quote = memchr::memchr(b'\'', &source.as_bytes()[i..]);
+		let part = &source[i..i + next_quote.unwrap_or(source.len() - i)];
+		if part.bytes().all(is_shell_safe) {
 			output.push_str(part);
 		} else {
 			output.push(b'\'');
 			output.push_str(part);
 			output.push(b'\'');
+		}
+		if let Some(next_quote) = next_quote {
+			output.push_str("\\\'");
+			i += next_quote + 1;
+		} else {
+			break;
 		}
 	}
 }
@@ -149,7 +154,7 @@ fn expand_str_to<S: VarScope>(
 	result: &mut RawString,
 	prot: Option<&RecursionProtection>,
 ) -> Result<(), ExpansionError> {
-	while let Some(i) = source.bytes().position(|b| b == b'$') {
+	while let Some(i) = memchr::memchr(b'$', source.as_bytes()) {
 		result.push_str(&source[..i]); // The part before the '$' is used literally
 		source = &source[i + 1..]; // Only keep part after the '$' for further processing
 		if let Some(var) = eat_identifier(&mut source) {

@@ -85,10 +85,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 			let indent = eat_whitespace(&mut self.source);
 			if self.source.starts_with("#") {
 				// Ignore comment line.
-				let next_line_pos = self
-					.source
-					.bytes()
-					.position(|c| c == b'\n')
+				let next_line_pos = memchr::memchr(b'\n', self.source.as_bytes())
 					.map_or(self.source.len(), |n| n + 1);
 				self.source = &self.source[next_line_pos..];
 				self.line_num += 1;
@@ -107,22 +104,24 @@ impl<'a, 'b> Parser<'a, 'b> {
 			return None;
 		}
 
-		let mut escape = false;
-		let (line_end, newline) = match self.source.bytes().position(|c| {
-			if escape {
-				if c == b'\n' {
-					self.escaped_lines += 1;
+		let mut line_end = 0;
+		let mut newline = 1;
+		loop {
+			match memchr::memchr(b'\n', &self.source.as_bytes()[line_end..]) {
+				Some(more) if more > 0 && self.source[line_end + more - 1] == b'$' => {
+					// Escaped newline, continue the line after the newline.
+					line_end += more + 1;
 				}
-				escape = false;
-			} else if c == b'\n' {
-				return true;
-			} else if c == b'$' {
-				escape = true;
+				Some(more) => {
+					line_end += more;
+					break;
+				}
+				None => {
+					// No newline at the end of the line.
+					newline = 0;
+					break;
+				}
 			}
-			false
-		}) {
-			Some(i) => (i, 1),
-			None => (self.source.len(), 0),
 		};
 
 		let line = &self.source[..line_end];

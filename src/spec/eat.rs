@@ -42,30 +42,34 @@ pub fn eat_identifier<'a>(src: &mut &'a RawStr) -> Option<&'a str> {
 }
 
 pub fn eat_path<'a>(src: &mut &'a RawStr) -> Result<&'a RawStr, ParseError> {
-	let mut escape = false;
-	let mut newline = false;
-	let ident_end = src
-		.bytes()
-		.position(|c| {
-			if newline {
-				match c {
-					b' ' | b'\t' => return false,
-					_ => newline = false,
+	let mut len = 0;
+	loop {
+		match memchr::memchr3(b' ', b':', b'|', &src.as_bytes()[len..]) {
+			Some(n) if n > 0 && src[len + n] == b' ' && src[len + n - 1] == b'\n' => {
+				// Whitespace at the beginning of a line. Skip it.
+				len += n + 1;
+				match src[len..].bytes().position(|c| c != b' ') {
+					Some(n_whitespace) => {
+						len += n_whitespace
+					}
+					None => break,
 				}
 			}
-			if escape {
-				if c == b'\n' {
-					newline = true;
-				}
-				escape = false;
-			} else if b" :|".contains(&c) {
-				return true;
-			} else if c == b'$' {
-				escape = true;
+			Some(n) if n > 0 && src[len + n - 1] == b'$' => {
+				// Esacped character. Continue.
+				len += n + 1;
 			}
-			false
-		}).unwrap_or(src.len());
-	let (path, rest) = src.split_at(ident_end);
+			Some(n) => {
+				len += n;
+				break;
+			}
+			None => {
+				len = src.len();
+				break;
+			}
+		}
+	}
+	let (path, rest) = src.split_at(len);
 	*src = rest;
 	if path.is_empty() {
 		Err(ParseError::ExpectedPath)
