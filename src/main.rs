@@ -132,6 +132,13 @@ fn main() {
 		})
 	});
 
+	let mut target_to_dep_file = BTreeMap::<&RawStr, usize>::new();
+	for (i, record) in deps_file.records.iter().enumerate() {
+		if record.deps.is_some() {
+			target_to_dep_file.insert(&record.path, i);
+		}
+	}
+
 	let mut stat_cache = StatCache::new();
 
 	let mut queue = BuildQueue::new(
@@ -147,6 +154,24 @@ fn main() {
 				if let Some(mtime) = stat_cache.mtime(output.as_path()) {
 					if output_time.map_or(true, |m| m > mtime) {
 						output_time = Some(mtime);
+					}
+					if let Some(&dep_i) = target_to_dep_file.get(&output[..]) {
+						let record = deps_file.records[dep_i].deps.as_ref().unwrap();
+						if UNIX_EPOCH + Duration::from_nanos(record.mtime) < mtime {
+							// Our dependency information is outdated, so threat the target as outdated.
+							output_time = None;
+							outdated = true;
+							break;
+						}
+						for &dep in &record.deps {
+							let dep_mtime = stat_cache.mtime(deps_file.records[dep as usize].path.as_path());
+							if dep_mtime.map_or(true, |m| m > mtime) {
+								// This recorded dependency is newer than the output, so we're definitely outdated.
+								output_time = None;
+								outdated = true;
+								break;
+							}
+						}
 					}
 				} else {
 					// This output doesn't even exist, so the task is definitely out of date.
