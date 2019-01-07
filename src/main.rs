@@ -158,7 +158,7 @@ fn main() {
 					if let Some(&dep_i) = target_to_dep_file.get(&output[..]) {
 						let record = deps_file.records[dep_i].deps.as_ref().unwrap();
 						if UNIX_EPOCH + Duration::from_nanos(record.mtime) < mtime {
-							// Our dependency information is outdated, so threat the target as outdated.
+							// Our dependency information is outdated, so treat the target as outdated.
 							output_time = None;
 							outdated = true;
 							break;
