@@ -207,7 +207,7 @@ fn main() {
 
 	let n_threads = opt.n_threads;
 
-	#[derive(Debug,Clone,PartialEq)]
+	#[derive(Debug, Clone, PartialEq)]
 	enum WorkerStatus {
 		Starting,
 		Idle,
