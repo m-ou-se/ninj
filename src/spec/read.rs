@@ -7,7 +7,7 @@ use pile::Pile;
 use raw_string::{RawStr, RawString};
 use std::borrow::ToOwned;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, BufReader};
 use std::mem::replace;
 use std::path::Path;
 use std::str::from_utf8;
@@ -15,7 +15,7 @@ use std::str::from_utf8;
 fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawStr, ReadError> {
 	let mut bytes = Vec::new();
 	File::open(file_name)
-		.and_then(|mut f| f.read_to_end(&mut bytes))
+		.and_then(|f| BufReader::with_capacity(0x10000, f).read_to_end(&mut bytes))
 		.map_err(|error| ReadError::IoError {
 			file_name: file_name.to_owned(),
 			error,
