@@ -4,19 +4,19 @@ mod statcache;
 mod timeformat;
 
 use self::graph::generate_graph;
-use self::queue::{BuildQueue, DepInfo, TaskStatus, TaskInfo};
-use ninj::spec::{read, BuildRuleCommand};
+use self::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
+use self::statcache::StatCache;
+use self::timeformat::MinSec;
 use ninj::deplog::Deps;
+use ninj::spec::{read, BuildRuleCommand};
+use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::exit;
-use structopt::StructOpt;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
-use self::timeformat::MinSec;
-use raw_string::unix::RawStrExt;
-use self::statcache::StatCache;
+use structopt::StructOpt;
 
 #[derive(StructOpt)]
 struct Options {
@@ -79,7 +79,10 @@ fn main() {
 	for (rule_i, rule) in spec.build_rules.iter().enumerate() {
 		for output in &rule.outputs {
 			if target_to_rule.insert(&output, rule_i).is_some() {
-				eprintln!("Warning, multiple rules generating {:?}. Ignoring all but last one.", output);
+				eprintln!(
+					"Warning, multiple rules generating {:?}. Ignoring all but last one.",
+					output
+				);
 			}
 		}
 	}
@@ -98,7 +101,11 @@ fn main() {
 				for record in &deps_file.records {
 					if let Some(deps) = &record.deps {
 						if target_to_rule.contains_key(&record.path[..]) {
-							let mtime = || std::fs::metadata(record.path.as_path()).and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH);
+							let mtime = || {
+								std::fs::metadata(record.path.as_path())
+									.and_then(|m| m.modified())
+									.unwrap_or(UNIX_EPOCH)
+							};
 							let deps_mtime = UNIX_EPOCH + Duration::from_nanos(deps.mtime);
 							println!(
 								"{}: #deps {}, deps mtime {}.{:09} ({})",
@@ -106,7 +113,11 @@ fn main() {
 								deps.deps.len(),
 								deps.mtime / 1_000_000_000,
 								deps.mtime % 1_000_000_000,
-								if deps.mtime == 0 || deps_mtime < mtime() { "STALE" } else { "VALID" }
+								if deps.mtime == 0 || deps_mtime < mtime() {
+									"STALE"
+								} else {
+									"VALID"
+								}
 							);
 							for &dep in &deps.deps {
 								println!("    {}", deps_file.records[dep as usize].path);
@@ -207,7 +218,9 @@ fn main() {
 		while let Some(task) = queue.next() {
 			match &spec.build_rules[task].command {
 				BuildRuleCommand::Phony => unreachable!("Got phony task."),
-				BuildRuleCommand::Command { description, command, .. } => {
+				BuildRuleCommand::Command {
+					description, command, ..
+				} => {
 					let label = if opt.verbose || description.is_empty() {
 						command
 					} else {
@@ -229,8 +242,8 @@ fn main() {
 	enum WorkerStatus {
 		Starting,
 		Idle,
-		Running{task: usize},
-		Done
+		Running { task: usize },
+		Done,
 	}
 
 	struct BuildStatusInner {
@@ -243,8 +256,11 @@ fn main() {
 		condvar: Condvar,
 	}
 
-	let status = BuildStatus{
-		inner: Mutex::new(BuildStatusInner{workers: vec![WorkerStatus::Starting; n_threads], dirty: true}),
+	let status = BuildStatus {
+		inner: Mutex::new(BuildStatusInner {
+			workers: vec![WorkerStatus::Starting; n_threads],
+			dirty: true,
+		}),
 		condvar: Condvar::new(),
 	};
 
@@ -281,12 +297,10 @@ fn main() {
 						// There are no remaining jobs
 						break;
 					};
-					status.set_status(i, WorkerStatus::Running{task});
+					status.set_status(i, WorkerStatus::Running { task });
 					let command = match &spec.build_rules[task].command {
 						BuildRuleCommand::Phony => unreachable!("Got phony task."),
-						BuildRuleCommand::Command { command, .. } => {
-							command
-						}
+						BuildRuleCommand::Command { command, .. } => command,
 					};
 					if opt.sleep_run {
 						std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
@@ -300,7 +314,7 @@ fn main() {
 								exit(1);
 							});
 						match status.code() {
-							Some(0) => {},
+							Some(0) => {}
 							Some(x) => {
 								eprintln!("Exited with status code {}: {}", x, command);
 								exit(1);
@@ -357,11 +371,11 @@ fn main() {
 								println!("=> [{t}] \x1b[33m{d} ...\x1b[K\x1b[m", d=description, t=statustext);
 							}
 						}
-					}
+					},
 				}
 			}
 			println!("Building for {}...", MinSec::since(starttime));
-			if workers.iter().all(|worker| *worker == WorkerStatus::Done ) {
+			if workers.iter().all(|worker| *worker == WorkerStatus::Done) {
 				break;
 			}
 			print!("\x1b[{}A", workers.len() + 1);

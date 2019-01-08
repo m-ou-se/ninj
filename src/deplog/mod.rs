@@ -27,9 +27,7 @@ pub struct Deps {
 
 impl Deps {
 	pub fn new() -> Self {
-		Deps {
-			records: Vec::new()
-		}
+		Deps { records: Vec::new() }
 	}
 
 	pub fn read(file: impl AsRef<Path>) -> Result<Deps, std::io::Error> {
@@ -51,10 +49,7 @@ impl Deps {
 		if version != 3 && version != 4 {
 			return Err(Error::new(
 				ErrorKind::InvalidData,
-				format!(
-					"Only version 3 and 4 are supported, but version {} was found",
-					version
-				),
+				format!("Only version 3 and 4 are supported, but version {} was found", version),
 			));
 		}
 

@@ -189,9 +189,7 @@ impl std::fmt::Display for ReadError {
 			ReadError::ExpectedPoolDepth => write!(f, "Missing `depth =' line"),
 			ReadError::UnknownVariable(n) => write!(f, "Unexpected variable: {}", n),
 			ReadError::ExpansionError(e) => write!(f, "{}", e),
-			ReadError::IoError { file_name, error } => {
-				write!(f, "Unable to read {:?}: {}", file_name, error)
-			}
+			ReadError::IoError { file_name, error } => write!(f, "Unable to read {:?}: {}", file_name, error),
 			ReadError::InvalidUtf8 { var } => {
 				write!(f, "Invalid UTF-8 encoding")?;
 				if let Some(var) = var {

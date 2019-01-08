@@ -15,10 +15,7 @@ pub fn is_identifier_char(c: u8) -> bool {
 }
 
 pub fn eat_identifier<'a>(src: &mut &'a RawStr) -> Option<&'a str> {
-	let ident_end = src
-		.bytes()
-		.position(|c| !is_identifier_char(c))
-		.unwrap_or(src.len());
+	let ident_end = src.bytes().position(|c| !is_identifier_char(c)).unwrap_or(src.len());
 	let (ident, rest) = src.split_at(ident_end);
 	*src = rest;
 	if ident.is_empty() {
@@ -36,9 +33,7 @@ pub fn eat_path<'a>(src: &mut &'a RawStr) -> Result<&'a RawStr, ParseError> {
 				// Whitespace at the beginning of a line. Skip it.
 				len += n + 1;
 				match src[len..].bytes().position(|c| c != b' ') {
-					Some(n_whitespace) => {
-						len += n_whitespace
-					}
+					Some(n_whitespace) => len += n_whitespace,
 					None => break,
 				}
 			}

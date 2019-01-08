@@ -107,10 +107,9 @@ impl<'a> VarScope for [ExpandedVar<'a>] {
 
 impl<'a, 'p> VarScope for FileScope<'a, 'p> {
 	fn lookup_var(&self, var_name: &str) -> Option<FoundVar> {
-		self.vars.lookup_var(var_name).or_else(|| {
-			self.parent_scope
-				.and_then(|parent| parent.lookup_var(var_name))
-		})
+		self.vars
+			.lookup_var(var_name)
+			.or_else(|| self.parent_scope.and_then(|parent| parent.lookup_var(var_name)))
 	}
 }
 
@@ -137,15 +136,11 @@ impl<'a> VarScope for BuildRuleScope<'a> {
 				paths: self.inputs,
 				newlines: true,
 			}),
-			_ => self
-				.build_scope
-				.build_vars
-				.lookup_var(var_name)
-				.or_else(|| {
-					self.rule_vars
-						.lookup_var(var_name)
-						.or_else(|| self.build_scope.file_scope.lookup_var(var_name))
-				}),
+			_ => self.build_scope.build_vars.lookup_var(var_name).or_else(|| {
+				self.rule_vars
+					.lookup_var(var_name)
+					.or_else(|| self.build_scope.file_scope.lookup_var(var_name))
+			}),
 		}
 	}
 }
@@ -174,9 +169,6 @@ impl<'a, 'p> FileScope<'a, 'p> {
 		self.rules
 			.iter()
 			.rfind(|Rule { name, .. }| *name == rule_name)
-			.or_else(|| {
-				self.parent_scope
-					.and_then(|parent| parent.lookup_rule(rule_name))
-			})
+			.or_else(|| self.parent_scope.and_then(|parent| parent.lookup_rule(rule_name)))
 	}
 }

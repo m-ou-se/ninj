@@ -9,9 +9,7 @@ pub struct StatCache<'a> {
 
 impl<'a> StatCache<'a> {
 	pub fn new() -> Self {
-		StatCache {
-			cache: BTreeMap::new(),
-		}
+		StatCache { cache: BTreeMap::new() }
 	}
 
 	pub fn mtime(&mut self, file: &'a Path) -> Option<SystemTime> {

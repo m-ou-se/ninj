@@ -1,6 +1,6 @@
 use std::mem::replace;
 use std::sync::{Condvar, Mutex, MutexGuard};
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -78,14 +78,13 @@ pub struct DepInfo {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TaskInfo<T: IntoIterator<Item=DepInfo>> {
+pub struct TaskInfo<T: IntoIterator<Item = DepInfo>> {
 	pub phony: bool,
 	pub dependencies: T,
 	pub outdated: bool,
 }
 
 impl BuildQueue {
-
 	/// Construct a new build dependency graph.
 	///
 	/// The (potential) tasks are numbered 0 to `max_task_num`.
@@ -201,9 +200,15 @@ impl BuildQueue {
 		let next = self.ready.pop();
 		if let Some(next) = next {
 			assert_eq!(self.tasks[next].n_deps_left, 0);
-			assert_eq!(self.tasks[next].status, TaskStatus::Needed { phony: false, outdated: true });
+			assert_eq!(
+				self.tasks[next].status,
+				TaskStatus::Needed {
+					phony: false,
+					outdated: true
+				}
+			);
 			self.tasks[next].status = TaskStatus::Running {
-				start_time: Instant::now()
+				start_time: Instant::now(),
 			};
 			self.n_left -= 1;
 		}
@@ -220,7 +225,10 @@ impl BuildQueue {
 				running_time: start_time.elapsed(),
 				was_outdated,
 			},
-			_ => panic!("complete_task({}) on task that isn't Running or PhonyQueued: {:?}", task, self.tasks[task]),
+			_ => panic!(
+				"complete_task({}) on task that isn't Running or PhonyQueued: {:?}",
+				task, self.tasks[task]
+			),
 		};
 		let mut newly_ready = 0;
 		let mut newly_finished = Vec::new();
@@ -241,7 +249,7 @@ impl BuildQueue {
 		let was_outdated = match &self.tasks[task].status {
 			TaskStatus::NotRun => false,
 			TaskStatus::PhonyFinished => true,
-			TaskStatus::Finished{ was_outdated, .. } => *was_outdated,
+			TaskStatus::Finished { was_outdated, .. } => *was_outdated,
 			_ => unreachable!("Task {} was not finished: {:?}", task, self.tasks[task]),
 		};
 		let mut newly_ready = 0;

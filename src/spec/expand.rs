@@ -134,15 +134,7 @@ fn expand_var_to<S: VarScope>(
 		}
 		Some(FoundVar::Unexpanded(e)) => {
 			check_recursion(var_name, prot)?;
-			expand_str_to(
-				e,
-				scope,
-				result,
-				Some(&RecursionProtection {
-					parent: prot,
-					var_name,
-				}),
-			)?;
+			expand_str_to(e, scope, result, Some(&RecursionProtection { parent: prot, var_name }))?;
 		}
 		None => {}
 	})
@@ -235,17 +227,11 @@ pub fn expand_str_test() {
 				"r2" => Some(FoundVar::Unexpanded("$r3".as_ref())),
 				"r3" => Some(FoundVar::Unexpanded("$r1".as_ref())),
 				"in" => Some(FoundVar::Paths {
-					paths: Box::leak(Box::new([
-						RawString::from("hello"),
-						RawString::from("wor ld"),
-					])),
+					paths: Box::leak(Box::new([RawString::from("hello"), RawString::from("wor ld")])),
 					newlines: false,
 				}),
 				"in_newline" => Some(FoundVar::Paths {
-					paths: Box::leak(Box::new([
-						RawString::from("he||o"),
-						RawString::from("wo'r|d"),
-					])),
+					paths: Box::leak(Box::new([RawString::from("he||o"), RawString::from("wo'r|d")])),
 					newlines: true,
 				}),
 				_ => None,

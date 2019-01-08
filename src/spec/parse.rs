@@ -85,8 +85,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 			let indent = eat_whitespace(&mut self.source);
 			if self.source.starts_with("#") {
 				// Ignore comment line.
-				let next_line_pos = memchr::memchr(b'\n', self.source.as_bytes())
-					.map_or(self.source.len(), |n| n + 1);
+				let next_line_pos = memchr::memchr(b'\n', self.source.as_bytes()).map_or(self.source.len(), |n| n + 1);
 				self.source = &self.source[next_line_pos..];
 				self.line_num += 1;
 			} else {
@@ -122,7 +121,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 					break;
 				}
 			}
-		};
+		}
 
 		let line = &self.source[..line_end];
 		self.source = &self.source[line_end + newline..];
@@ -266,10 +265,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 			var_name => {
 				if let Some((b'=', mut value)) = line.split_first() {
 					eat_whitespace(&mut value);
-					Statement::Variable {
-						name: var_name,
-						value,
-					}
+					Statement::Variable { name: var_name, value }
 				} else {
 					return Err(loc.make_error(ParseError::ExpectedStatement));
 				}
