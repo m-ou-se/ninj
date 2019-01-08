@@ -30,11 +30,11 @@ impl Deps {
 		Deps { records: Vec::new() }
 	}
 
-	pub fn read(file: impl AsRef<Path>) -> Result<Deps, std::io::Error> {
+	pub fn read(file: impl AsRef<Path>) -> Result<Deps, Error> {
 		Deps::read_from(File::open(file)?)
 	}
 
-	pub fn read_from(file: File) -> Result<Deps, std::io::Error> {
+	pub fn read_from(file: File) -> Result<Deps, Error> {
 		let mut file = BufReader::new(file);
 
 		{
