@@ -1,10 +1,11 @@
 //! Everything related to the `.ninja_deps` file format.
 
-use byteorder::{LE, ReadBytesExt};
-use raw_string::RawString;
+use byteorder::{ReadBytesExt, LE};
+use raw_string::{RawStr, RawString};
+use std::collections::BTreeMap;
 use std::fs::File;
-use std::mem::replace;
 use std::io::{BufReader, Error, ErrorKind, Read};
+use std::mem::replace;
 use std::path::Path;
 
 #[derive(Clone, Debug)]
@@ -94,7 +95,7 @@ impl Deps {
 
 				records.push(Record {
 					path: RawString::from_bytes(name),
-					deps: None
+					deps: None,
 				});
 			} else {
 				// Deps record
@@ -152,7 +153,10 @@ impl Deps {
 					record_deps.push(dep);
 				}
 
-				record.deps = Some(RecordDeps { deps: record_deps, mtime });
+				record.deps = Some(RecordDeps {
+					deps: record_deps,
+					mtime,
+				});
 			}
 		}
 
