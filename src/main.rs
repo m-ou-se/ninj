@@ -134,12 +134,7 @@ fn main() {
 		})
 	});
 
-	let mut target_to_dep_file = BTreeMap::<&RawStr, usize>::new();
-	for (i, record) in deps_file.records.iter().enumerate() {
-		if record.deps.is_some() {
-			target_to_dep_file.insert(&record.path, i);
-		}
-	}
+	let target_to_dep_file = deps_file.index_targets();
 
 	let mut stat_cache = StatCache::new();
 

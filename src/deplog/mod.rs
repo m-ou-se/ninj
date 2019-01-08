@@ -158,4 +158,24 @@ impl Deps {
 
 		Ok(Deps { records })
 	}
+
+	/// Generate a map of the paths to their index in the `records` vector.
+	pub fn index_paths(&self) -> BTreeMap<&RawStr, usize> {
+		self.records
+			.iter()
+			.enumerate()
+			.map(|(i, record)| (&record.path[..], i))
+			.collect()
+	}
+
+	/// Generate a map of the paths to their index in the `records` vector, but
+	/// only for the paths that have dependencies recorded.
+	pub fn index_targets(&self) -> BTreeMap<&RawStr, usize> {
+		self.records
+			.iter()
+			.enumerate()
+			.filter(|(_, record)| record.deps.is_some())
+			.map(|(i, record)| (&record.path[..], i))
+			.collect()
+	}
 }
