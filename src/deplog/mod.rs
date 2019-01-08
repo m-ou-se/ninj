@@ -9,9 +9,8 @@ use std::mem::replace;
 use std::path::Path;
 
 #[derive(Clone, Debug)]
-pub struct RecordDeps {
-	pub deps: Vec<u32>,
-	pub mtime: u64,
+pub struct Deps {
+	pub records: Vec<Record>,
 }
 
 #[derive(Clone, Debug)]
@@ -21,8 +20,9 @@ pub struct Record {
 }
 
 #[derive(Clone, Debug)]
-pub struct Deps {
-	pub records: Vec<Record>,
+pub struct RecordDeps {
+	pub deps: Vec<u32>,
+	pub mtime: u64,
 }
 
 impl Deps {
