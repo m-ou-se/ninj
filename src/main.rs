@@ -7,6 +7,7 @@ use self::graph::generate_graph;
 use self::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
 use self::statcache::StatCache;
 use self::timeformat::MinSec;
+use ninj::buildlog::BuildLog;
 use ninj::deplog::Deps;
 use ninj::spec::{read, BuildRuleCommand};
 use raw_string::unix::RawStrExt;
@@ -88,6 +89,12 @@ fn main() {
 	}
 	println!("Done");
 
+	let build_log = BuildLog::read(spec.build_dir.as_path().join(".ninja_log")).unwrap_or_else(|e| {
+		eprintln!("Error while reading .ninja_log: {}", e);
+		eprintln!("Not using .ninja_log.");
+		BuildLog::new()
+	});
+
 	let deps_file = Deps::read(spec.build_dir.as_path().join(".ninja_deps")).unwrap_or_else(|e| {
 		eprintln!("Error while reading .ninja_deps: {}", e);
 		eprintln!("Not using .ninja_deps.");
@@ -97,6 +104,7 @@ fn main() {
 	if let Some(tool) = opt.tool {
 		match &tool[..] {
 			"graph" => generate_graph(&spec),
+			"log" => println!("{:#?}", build_log),
 			"deps" => {
 				for record in &deps_file.records {
 					if let Some(deps) = &record.deps {
@@ -128,7 +136,7 @@ fn main() {
 				}
 			}
 			"list" => {
-				println!("Subtools:\n\tdeps\n\tgraph");
+				println!("Subtools:\n\tdeps\n\tgraph\n\tlog");
 			}
 			x => {
 				eprintln!("Unknown subtool {:?}.", x);
