@@ -8,7 +8,7 @@ use self::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
 use self::statcache::StatCache;
 use self::timeformat::MinSec;
 use ninj::buildlog::BuildLog;
-use ninj::deplog::Deps;
+use ninj::deplog::DepLog;
 use ninj::spec::{read, BuildRuleCommand};
 use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
@@ -94,10 +94,10 @@ fn main() {
 		BuildLog::new()
 	});
 
-	let deps_file = Deps::read(spec.build_dir.as_path().join(".ninja_deps")).unwrap_or_else(|e| {
+	let dep_log = DepLog::read(spec.build_dir.as_path().join(".ninja_deps")).unwrap_or_else(|e| {
 		eprintln!("Error while reading .ninja_deps: {}", e);
 		eprintln!("Not using .ninja_deps.");
-		Deps::new()
+		DepLog::new()
 	});
 
 	if let Some(tool) = opt.tool {
@@ -105,7 +105,7 @@ fn main() {
 			"graph" => generate_graph(&spec),
 			"log" => println!("{:#?}", build_log),
 			"deps" => {
-				for (path, deps) in deps_file.iter() {
+				for (path, deps) in dep_log.iter() {
 					if let Some(deps) = deps {
 						if target_to_rule.contains_key(&path[..]) {
 							let mtime = || {
@@ -127,7 +127,7 @@ fn main() {
 								}
 							);
 							for &dep in &deps.deps {
-								println!("    {}", deps_file.path_by_id(dep).unwrap());
+								println!("    {}", dep_log.path_by_id(dep).unwrap());
 							}
 							println!();
 						}
@@ -168,7 +168,7 @@ fn main() {
 					if output_time.map_or(true, |m| m > mtime) {
 						output_time = Some(mtime);
 					}
-					if let Some(deps) = deps_file.deps_by_path(&output) {
+					if let Some(deps) = dep_log.deps_by_path(&output) {
 						if UNIX_EPOCH + Duration::from_nanos(deps.mtime) < mtime {
 							// Our dependency information is outdated, so treat the target as outdated.
 							output_time = None;
@@ -176,7 +176,7 @@ fn main() {
 							break;
 						}
 						for &dep in &deps.deps {
-							let dep_mtime = stat_cache.mtime(deps_file.path_by_id(dep).unwrap().as_path());
+							let dep_mtime = stat_cache.mtime(dep_log.path_by_id(dep).unwrap().as_path());
 							if dep_mtime.map_or(true, |m| m > mtime) {
 								// This recorded dependency is newer than the output, so we're definitely outdated.
 								output_time = None;

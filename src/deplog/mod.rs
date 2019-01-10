@@ -11,14 +11,14 @@ use std::path::Path;
 
 /// Represents the contents of a dependency log (from a `.ninja_deps` file).
 #[derive(Clone, Debug)]
-pub struct Deps {
+pub struct DepLog {
 	records: IndexMap<RawString, Option<Record>>,
 }
 
 /// Represents a `./ninja_deps` file, and allows making additions to it.
 #[derive(Debug)]
-pub struct DepsMut {
-	deps: Deps,
+pub struct DepLogMut {
+	deps: DepLog,
 	file: BufWriter<File>,
 }
 
@@ -28,9 +28,9 @@ pub struct Record {
 	pub mtime: u64,
 }
 
-impl Deps {
+impl DepLog {
 	pub fn new() -> Self {
-		Deps {
+		DepLog {
 			records: IndexMap::new(),
 		}
 	}
@@ -63,11 +63,11 @@ impl Deps {
 		self.records.iter()
 	}
 
-	pub fn read(file: impl AsRef<Path>) -> Result<Deps, Error> {
-		Deps::read_from(&mut File::open(file)?)
+	pub fn read(file: impl AsRef<Path>) -> Result<DepLog, Error> {
+		DepLog::read_from(&mut File::open(file)?)
 	}
 
-	pub fn read_from(file: &mut dyn Read) -> Result<Deps, Error> {
+	pub fn read_from(file: &mut dyn Read) -> Result<DepLog, Error> {
 		let mut file = BufReader::new(file);
 
 		{
@@ -196,23 +196,23 @@ impl Deps {
 			}
 		}
 
-		Ok(Deps { records })
+		Ok(DepLog { records })
 	}
 }
 
-impl DepsMut {
+impl DepLogMut {
 
-	pub fn open(file: impl AsRef<Path>) -> Result<DepsMut, Error> {
+	pub fn open(file: impl AsRef<Path>) -> Result<DepLogMut, Error> {
 		let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(file)?;
 		if file.metadata()?.len() == 0 {
 			file.write_all(b"# ninjadeps\n\x04\0\0\0")?;
-			Ok(DepsMut {
-				deps: Deps::new(),
+			Ok(DepLogMut {
+				deps: DepLog::new(),
 				file: BufWriter::new(file),
 			})
 		} else {
-			Ok(DepsMut {
-				deps: Deps::read_from(&mut file)?,
+			Ok(DepLogMut {
+				deps: DepLog::read_from(&mut file)?,
 				file: BufWriter::new(file),
 			})
 		}
@@ -288,8 +288,8 @@ impl DepsMut {
 
 }
 
-impl std::ops::Deref for DepsMut {
-	type Target = Deps;
+impl std::ops::Deref for DepLogMut {
+	type Target = DepLog;
 	fn deref(&self) -> &Self::Target {
 		&self.deps
 	}
@@ -305,37 +305,37 @@ mod test {
 		std::fs::remove_file(file_name).ok();
 		for _ in 0..2 {
 			{
-				let mut deps = DepsMut::open(file_name)?;
-				deps.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
-				deps.insert_deps("output2".into(), 200, vec!["input1".into(), "input3".into()])?;
+				let mut dep_log = DepLogMut::open(file_name)?;
+				dep_log.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
+				dep_log.insert_deps("output2".into(), 200, vec!["input1".into(), "input3".into()])?;
 			}
 			{
-				let deps = Deps::read(file_name)?;
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output1")).unwrap().mtime, 100);
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output2")).unwrap().mtime, 200);
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output1")).unwrap().deps, vec![1, 2]);
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output2")).unwrap().deps, vec![1, 4]);
-				assert_eq!(deps.path_by_id(1).unwrap(), "input1");
-				assert_eq!(deps.path_by_id(2).unwrap(), "input2");
-				assert_eq!(deps.path_by_id(4).unwrap(), "input3");
+				let dep_log = DepLog::read(file_name)?;
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output1")).unwrap().mtime, 100);
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output2")).unwrap().mtime, 200);
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output1")).unwrap().deps, vec![1, 2]);
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output2")).unwrap().deps, vec![1, 4]);
+				assert_eq!(dep_log.path_by_id(1).unwrap(), "input1");
+				assert_eq!(dep_log.path_by_id(2).unwrap(), "input2");
+				assert_eq!(dep_log.path_by_id(4).unwrap(), "input3");
 			}
 			{
-				let mut deps = DepsMut::open(file_name)?;
-				deps.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
-				deps.insert_deps("output2".into(), 200, vec!["input1".into()])?;
-				deps.insert_deps("output3".into(), 300, vec!["input4".into()])?;
+				let mut dep_log = DepLogMut::open(file_name)?;
+				dep_log.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
+				dep_log.insert_deps("output2".into(), 200, vec!["input1".into()])?;
+				dep_log.insert_deps("output3".into(), 300, vec!["input4".into()])?;
 			}
 			{
-				let deps = Deps::read(file_name)?;
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output1")).unwrap().mtime, 100);
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output2")).unwrap().mtime, 200);
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output3")).unwrap().mtime, 300);
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output1")).unwrap().deps, vec![1, 2]);
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output2")).unwrap().deps, vec![1]);
-				assert_eq!(deps.deps_by_path(RawStr::from_str("output3")).unwrap().deps, vec![6]);
-				assert_eq!(deps.path_by_id(1).unwrap(), "input1");
-				assert_eq!(deps.path_by_id(2).unwrap(), "input2");
-				assert_eq!(deps.path_by_id(6).unwrap(), "input4");
+				let dep_log = DepLog::read(file_name)?;
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output1")).unwrap().mtime, 100);
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output2")).unwrap().mtime, 200);
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output3")).unwrap().mtime, 300);
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output1")).unwrap().deps, vec![1, 2]);
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output2")).unwrap().deps, vec![1]);
+				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output3")).unwrap().deps, vec![6]);
+				assert_eq!(dep_log.path_by_id(1).unwrap(), "input1");
+				assert_eq!(dep_log.path_by_id(2).unwrap(), "input2");
+				assert_eq!(dep_log.path_by_id(6).unwrap(), "input4");
 			}
 		}
 		std::fs::remove_file(file_name)?;
