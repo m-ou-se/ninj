@@ -69,7 +69,7 @@ pub enum FoundVar<'a> {
 	/// The variable is found, and the value was already expanded.
 	Expanded(&'a RawStr),
 
-	/// The variable is found, and tte value needs to be expanded.
+	/// The variable is found, and the value needs to be expanded.
 	///
 	/// This is the case for variables defined in a `rule` definition.
 	Unexpanded(&'a RawStr),
