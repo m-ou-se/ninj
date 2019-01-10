@@ -3,7 +3,7 @@
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 use indexmap::map::IndexMap;
 use indexmap::map::Entry as IndexMapEntry;
-use raw_string::RawString;
+use raw_string::{RawStr, RawString};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
 use std::mem::replace;
@@ -12,7 +12,7 @@ use std::path::Path;
 /// Represents the contents of a dependency log (from a `.ninja_deps` file).
 #[derive(Clone, Debug)]
 pub struct Deps {
-	pub records: IndexMap<RawString, Option<Record>>,
+	records: IndexMap<RawString, Option<Record>>,
 }
 
 /// Represents a `./ninja_deps` file, and allows making additions to it.
@@ -33,6 +33,34 @@ impl Deps {
 		Deps {
 			records: IndexMap::new(),
 		}
+	}
+
+	pub fn get_by_id(&self, id: u32) -> Option<(&RawStr, Option<&Record>)> {
+		self.records.get_index(id as usize).map(|(k, v)| (&k[..], v.as_ref()))
+	}
+
+	pub fn path_by_id(&self, id: u32) -> Option<&RawStr> {
+		self.records.get_index(id as usize).map(|(k, _)| &k[..])
+	}
+
+	pub fn deps_by_id(&self, id: u32) -> Option<&Record> {
+		self.records.get_index(id as usize).and_then(|(_, v)| v.as_ref())
+	}
+
+	pub fn get_by_path(&self, path: &RawStr) -> Option<(u32, Option<&Record>)> {
+		self.records.get_full(path).map(|(i, _, v)| (i as u32, v.as_ref()))
+	}
+
+	pub fn deps_by_path(&self, path: &RawStr) -> Option<&Record> {
+		self.records.get(path).and_then(|v| v.as_ref())
+	}
+
+	pub fn id_by_path(&self, path: &RawStr) -> Option<u32> {
+		self.records.get_full(path).map(|(i, _, _)| i as u32)
+	}
+
+	pub fn iter(&self) -> impl Iterator<Item=(&RawString, &Option<Record>)> {
+		self.records.iter()
 	}
 
 	pub fn read(file: impl AsRef<Path>) -> Result<Deps, Error> {
@@ -267,36 +295,50 @@ impl std::ops::Deref for DepsMut {
 	}
 }
 
-#[test]
-fn test() -> Result<(), Error> {
-	use raw_string::RawStr;
-	let file_name = "test-deps";
-	std::fs::remove_file(file_name).ok();
-	for _ in 0..2 {
-		{
-			let mut deps = DepsMut::open(file_name)?;
-			deps.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
-			deps.insert_deps("output2".into(), 200, vec!["input1".into(), "input3".into()])?;
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	#[test]
+	fn test() -> Result<(), Error> {
+		let file_name = "ninj-test-deps-file";
+		std::fs::remove_file(file_name).ok();
+		for _ in 0..2 {
+			{
+				let mut deps = DepsMut::open(file_name)?;
+				deps.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
+				deps.insert_deps("output2".into(), 200, vec!["input1".into(), "input3".into()])?;
+			}
+			{
+				let deps = Deps::read(file_name)?;
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output1")).unwrap().mtime, 100);
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output2")).unwrap().mtime, 200);
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output1")).unwrap().deps, vec![1, 2]);
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output2")).unwrap().deps, vec![1, 4]);
+				assert_eq!(deps.path_by_id(1).unwrap(), "input1");
+				assert_eq!(deps.path_by_id(2).unwrap(), "input2");
+				assert_eq!(deps.path_by_id(4).unwrap(), "input3");
+			}
+			{
+				let mut deps = DepsMut::open(file_name)?;
+				deps.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
+				deps.insert_deps("output2".into(), 200, vec!["input1".into()])?;
+				deps.insert_deps("output3".into(), 300, vec!["input4".into()])?;
+			}
+			{
+				let deps = Deps::read(file_name)?;
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output1")).unwrap().mtime, 100);
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output2")).unwrap().mtime, 200);
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output3")).unwrap().mtime, 300);
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output1")).unwrap().deps, vec![1, 2]);
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output2")).unwrap().deps, vec![1]);
+				assert_eq!(deps.deps_by_path(RawStr::from_str("output3")).unwrap().deps, vec![6]);
+				assert_eq!(deps.path_by_id(1).unwrap(), "input1");
+				assert_eq!(deps.path_by_id(2).unwrap(), "input2");
+				assert_eq!(deps.path_by_id(6).unwrap(), "input4");
+			}
 		}
-		{
-			let mut deps = DepsMut::open(file_name)?;
-			deps.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
-			deps.insert_deps("output2".into(), 200, vec!["input1".into()])?;
-			deps.insert_deps("output3".into(), 300, vec!["input4".into()])?;
-		}
-		{
-			let deps = Deps::read(file_name)?;
-			assert_eq!(deps.records.get(RawStr::from_str("output1")).unwrap().as_ref().unwrap().mtime, 100);
-			assert_eq!(deps.records.get(RawStr::from_str("output2")).unwrap().as_ref().unwrap().mtime, 200);
-			assert_eq!(deps.records.get(RawStr::from_str("output3")).unwrap().as_ref().unwrap().mtime, 300);
-			assert_eq!(deps.records.get(RawStr::from_str("output1")).unwrap().as_ref().unwrap().deps, vec![1, 2]);
-			assert_eq!(deps.records.get(RawStr::from_str("output2")).unwrap().as_ref().unwrap().deps, vec![1]);
-			assert_eq!(deps.records.get(RawStr::from_str("output3")).unwrap().as_ref().unwrap().deps, vec![6]);
-			assert_eq!(deps.records.get_index(1).unwrap().0, "input1");
-			assert_eq!(deps.records.get_index(2).unwrap().0, "input2");
-			assert_eq!(deps.records.get_index(6).unwrap().0, "input4");
-		}
+		std::fs::remove_file(file_name)?;
+		Ok(())
 	}
-	std::fs::remove_file(file_name)?;
-	Ok(())
 }
