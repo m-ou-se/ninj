@@ -22,51 +22,47 @@ pub struct DepLogMut {
 	file: BufWriter<File>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Deps<'a> {
+	record: &'a Record,
+	log: &'a DepLog,
+}
+
 #[derive(Clone, Debug)]
-pub struct Record {
-	pub deps: Vec<u32>,
-	pub mtime: u64,
+struct Record {
+	deps: Vec<u32>,
+	mtime: u64,
 }
 
 impl DepLog {
+	/// Create a new empty log.
 	pub fn new() -> Self {
 		DepLog {
 			records: IndexMap::new(),
 		}
 	}
 
-	pub fn get_by_id(&self, id: u32) -> Option<(&RawStr, Option<&Record>)> {
-		self.records.get_index(id as usize).map(|(k, v)| (&k[..], v.as_ref()))
-	}
-
-	pub fn path_by_id(&self, id: u32) -> Option<&RawStr> {
+	fn path_by_id(&self, id: u32) -> Option<&RawStr> {
 		self.records.get_index(id as usize).map(|(k, _)| &k[..])
 	}
 
-	pub fn deps_by_id(&self, id: u32) -> Option<&Record> {
-		self.records.get_index(id as usize).and_then(|(_, v)| v.as_ref())
+	/// Look up a target in the log.
+	pub fn get(&self, path: &RawStr) -> Option<Deps> {
+		self.records.get(path).and_then(|v| v.as_ref().map(|r| Deps { record: r, log: self }))
 	}
 
-	pub fn get_by_path(&self, path: &RawStr) -> Option<(u32, Option<&Record>)> {
-		self.records.get_full(path).map(|(i, _, v)| (i as u32, v.as_ref()))
+	/// Iterate over all targets in the log.
+	pub fn iter(&self) -> impl Iterator<Item=(&RawStr, Deps)> {
+		let log = self;
+		self.records.iter().flat_map(move |(k, v)| v.as_ref().map(move |v| (&k[..], Deps { record: v, log })))
 	}
 
-	pub fn deps_by_path(&self, path: &RawStr) -> Option<&Record> {
-		self.records.get(path).and_then(|v| v.as_ref())
-	}
-
-	pub fn id_by_path(&self, path: &RawStr) -> Option<u32> {
-		self.records.get_full(path).map(|(i, _, _)| i as u32)
-	}
-
-	pub fn iter(&self) -> impl Iterator<Item=(&RawString, &Option<Record>)> {
-		self.records.iter()
-	}
-
+	/// Read a log from a file.
 	pub fn read(file: impl AsRef<Path>) -> Result<DepLog, Error> {
 		DepLog::read_from(&mut File::open(file)?)
 	}
 
+	/// Read a log.
 	pub fn read_from(file: &mut dyn Read) -> Result<DepLog, Error> {
 		let mut file = BufReader::new(file);
 
@@ -200,8 +196,22 @@ impl DepLog {
 	}
 }
 
+impl<'a> Deps<'a> {
+	/// Get the `mtime` that was recorded in the log.
+	pub fn mtime(&self) -> u64 {
+		self.record.mtime
+	}
+
+	/// Get an iterator over the dependencies.
+	pub fn deps(&self) -> impl Iterator<Item=&'a RawStr> + ExactSizeIterator {
+		let log = self.log;
+		self.record.deps.iter().map(move |&i| log.path_by_id(i).unwrap())
+	}
+}
+
 impl DepLogMut {
 
+	/// Open and read a dependency log, or start a new one.
 	pub fn open(file: impl AsRef<Path>) -> Result<DepLogMut, Error> {
 		let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(file)?;
 		if file.metadata()?.len() == 0 {
@@ -311,13 +321,10 @@ mod test {
 			}
 			{
 				let dep_log = DepLog::read(file_name)?;
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output1")).unwrap().mtime, 100);
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output2")).unwrap().mtime, 200);
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output1")).unwrap().deps, vec![1, 2]);
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output2")).unwrap().deps, vec![1, 4]);
-				assert_eq!(dep_log.path_by_id(1).unwrap(), "input1");
-				assert_eq!(dep_log.path_by_id(2).unwrap(), "input2");
-				assert_eq!(dep_log.path_by_id(4).unwrap(), "input3");
+				assert_eq!(dep_log.get(RawStr::from_str("output1")).unwrap().mtime(), 100);
+				assert_eq!(dep_log.get(RawStr::from_str("output2")).unwrap().mtime(), 200);
+				assert!(dep_log.get(RawStr::from_str("output1")).unwrap().deps().eq(&["input1", "input2"]));
+				assert!(dep_log.get(RawStr::from_str("output2")).unwrap().deps().eq(&["input1", "input3"]));
 			}
 			{
 				let mut dep_log = DepLogMut::open(file_name)?;
@@ -327,15 +334,12 @@ mod test {
 			}
 			{
 				let dep_log = DepLog::read(file_name)?;
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output1")).unwrap().mtime, 100);
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output2")).unwrap().mtime, 200);
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output3")).unwrap().mtime, 300);
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output1")).unwrap().deps, vec![1, 2]);
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output2")).unwrap().deps, vec![1]);
-				assert_eq!(dep_log.deps_by_path(RawStr::from_str("output3")).unwrap().deps, vec![6]);
-				assert_eq!(dep_log.path_by_id(1).unwrap(), "input1");
-				assert_eq!(dep_log.path_by_id(2).unwrap(), "input2");
-				assert_eq!(dep_log.path_by_id(6).unwrap(), "input4");
+				assert_eq!(dep_log.get(RawStr::from_str("output1")).unwrap().mtime(), 100);
+				assert_eq!(dep_log.get(RawStr::from_str("output2")).unwrap().mtime(), 200);
+				assert_eq!(dep_log.get(RawStr::from_str("output3")).unwrap().mtime(), 300);
+				assert!(dep_log.get(RawStr::from_str("output1")).unwrap().deps().eq(&["input1", "input2"]));
+				assert!(dep_log.get(RawStr::from_str("output2")).unwrap().deps().eq(&["input1"]));
+				assert!(dep_log.get(RawStr::from_str("output3")).unwrap().deps().eq(&["input4"]));
 			}
 		}
 		std::fs::remove_file(file_name)?;

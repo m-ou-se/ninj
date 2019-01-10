@@ -106,31 +106,29 @@ fn main() {
 			"log" => println!("{:#?}", build_log),
 			"deps" => {
 				for (path, deps) in dep_log.iter() {
-					if let Some(deps) = deps {
-						if target_to_rule.contains_key(&path[..]) {
-							let mtime = || {
-								std::fs::metadata(path.as_path())
-									.and_then(|m| m.modified())
-									.unwrap_or(UNIX_EPOCH)
-							};
-							let deps_mtime = UNIX_EPOCH + Duration::from_nanos(deps.mtime);
-							println!(
-								"{}: #deps {}, deps mtime {}.{:09} ({})",
-								path,
-								deps.deps.len(),
-								deps.mtime / 1_000_000_000,
-								deps.mtime % 1_000_000_000,
-								if deps.mtime == 0 || deps_mtime < mtime() {
-									"STALE"
-								} else {
-									"VALID"
-								}
-							);
-							for &dep in &deps.deps {
-								println!("    {}", dep_log.path_by_id(dep).unwrap());
+					if target_to_rule.contains_key(&path[..]) {
+						let mtime = || {
+							std::fs::metadata(path.as_path())
+								.and_then(|m| m.modified())
+								.unwrap_or(UNIX_EPOCH)
+						};
+						let deps_mtime = UNIX_EPOCH + Duration::from_nanos(deps.mtime());
+						println!(
+							"{}: #deps {}, deps mtime {}.{:09} ({})",
+							path,
+							deps.deps().len(),
+							deps.mtime() / 1_000_000_000,
+							deps.mtime() % 1_000_000_000,
+							if deps.mtime() == 0 || deps_mtime < mtime() {
+								"STALE"
+							} else {
+								"VALID"
 							}
-							println!();
+						);
+						for dep in deps.deps() {
+							println!("    {}", dep);
 						}
+						println!();
 					}
 				}
 			}
@@ -168,15 +166,15 @@ fn main() {
 					if output_time.map_or(true, |m| m > mtime) {
 						output_time = Some(mtime);
 					}
-					if let Some(deps) = dep_log.deps_by_path(&output) {
-						if UNIX_EPOCH + Duration::from_nanos(deps.mtime) < mtime {
+					if let Some(deps) = dep_log.get(&output) {
+						if UNIX_EPOCH + Duration::from_nanos(deps.mtime()) < mtime {
 							// Our dependency information is outdated, so treat the target as outdated.
 							output_time = None;
 							outdated = true;
 							break;
 						}
-						for &dep in &deps.deps {
-							let dep_mtime = stat_cache.mtime(dep_log.path_by_id(dep).unwrap().as_path());
+						for dep in deps.deps() {
+							let dep_mtime = stat_cache.mtime(dep.as_path());
 							if dep_mtime.map_or(true, |m| m > mtime) {
 								// This recorded dependency is newer than the output, so we're definitely outdated.
 								output_time = None;
