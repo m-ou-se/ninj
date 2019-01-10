@@ -132,8 +132,18 @@ fn main() {
 					}
 				}
 			}
+			"targets" => {
+				for target in &spec.build_rules {
+					for output in &target.outputs {
+						println!("{}: {}", output, match &target.command {
+							BuildRuleCommand::Phony => "phony",
+							BuildRuleCommand::Command { rule_name, .. } => rule_name,
+						});
+					}
+				}
+			}
 			"list" => {
-				println!("Subtools:\n\tdeps\n\tgraph\n\tlog");
+				println!("Subtools:\n\tdeps\n\tgraph\n\tlog\n\ttargets");
 			}
 			x => {
 				eprintln!("Unknown subtool {:?}.", x);
