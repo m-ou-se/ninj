@@ -193,7 +193,11 @@ fn read_into<'a: 'p, 'p>(
 				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
 				expand_strs_into(&implicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
 
-				let order_deps = expand_strs(&order_deps, &build_scope).map_err(make_error)?;
+				let mut order_deps = expand_strs(&order_deps, &build_scope).map_err(make_error)?;
+
+				for path in outputs.iter_mut().chain(inputs.iter_mut()).chain(order_deps.iter_mut()) {
+					crate::canonicalizepath::canonicalize_path_in_place(path);
+				}
 
 				spec.build_rules.push(BuildRule {
 					outputs,
