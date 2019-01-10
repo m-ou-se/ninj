@@ -13,8 +13,18 @@ pub fn canonicalize_path_in_place(path: &mut RawString) {
 		}
 	}
 
-	let mut src = 0;
-	let mut dst = 0;
+	let mut fixed = 0;
+
+	if path[0] == b'/' {
+		fixed += 1;
+		if cfg!(windows) && path[1..].first() == Some(b'/') {
+			// Paths on Windows may start with '//'.
+			fixed += 1;
+		}
+	}
+
+	let mut src = fixed;
+	let mut dst = fixed;
 
 	// Invariants:
 	// - We still need to process path[src..].
@@ -23,65 +33,48 @@ pub fn canonicalize_path_in_place(path: &mut RawString) {
 	// - Anything in path[..fixed] is not going to change anymore (only for "/" and "../" prefixes).
 	// - fixed <= dst
 
-	if path[0] == b'/' {
-		src += 1;
-		dst += 1;
-		if cfg!(windows) && path.len() > 1 && path[1] == b'/' {
-			src += 1;
-			dst += 1;
+	// Copies N bytes from path[src..] to path[..dst], and advances src and dst.
+	macro_rules! copy {
+		($n:expr) => {
+			let n = $n;
+			if src != dst {
+				debug_assert!(src + n <= path.len());
+				debug_assert!(dst + n <= path.len());
+				unsafe {
+					std::ptr::copy(path.get_unchecked(src), path.get_unchecked_mut(dst), n);
+				}
+			}
+			src += n;
+			dst += n;
 		}
 	}
-
-	let mut fixed = dst;
 
 	while src < path.len() {
 		if path[src] == b'/' {
 			// Skip duplicate path separators.
 			src += 1;
-			continue;
-		} else if path[src] == b'.' {
-			if src + 1 >= path.len() || path[src + 1] == b'/' {
-				// Remove './' component.
-				src += 2;
-				continue;
-			} else if path[src + 1] == b'.' && (src + 2 >= path.len() || path[src + 2] == b'/') {
+		} else if path[src..].starts_with("./") || path[src..] == "." {
+			// Skip './' components.
+			src += 2;
+		} else if path[src..].starts_with("../") || path[src..] == ".." {
+			if dst > fixed {
 				// Remove '../' together with previous component.
-				if dst > fixed {
-					dst = path[..dst - 1].bytes().rposition(|c| c == b'/').map_or(0, |n| n + 1);
-					src += 3;
-					continue;
-				}
+				dst = path[..dst - 1].bytes().rposition(|c| c == b'/').map_or(0, |n| n + 1);
+				src += 3;
+			} else {
 				// No previous component. Keep the '../'.
-				path[dst] = path[src];
-				dst += 1;
-				src += 1;
-				path[dst] = path[src];
-				dst += 1;
-				src += 1;
+				copy!(if path.len() - src == 2 { 2 } else { 3 });
 				if src == path.len() {
 					path.truncate(dst);
 					return;
 				}
-				path[dst] = path[src];
-				dst += 1;
-				src += 1;
 				fixed = dst;
-				continue;
 			}
-		}
-		path[dst] = path[src];
-		dst += 1;
-		src += 1;
-		loop {
-			if src >= path.len() {
+		} else {
+			copy!(memchr::memchr(b'/', path[src..].as_bytes()).map_or(path.len() - src, |n| n + 1));
+			if src == path.len() {
 				path.truncate(dst);
 				return;
-			}
-			path[dst] = path[src];
-			dst += 1;
-			src += 1;
-			if path[src - 1] == b'/' {
-				break;
 			}
 		}
 	}
@@ -89,7 +82,7 @@ pub fn canonicalize_path_in_place(path: &mut RawString) {
 	if dst == 0 {
 		path.clear();
 		path.push(b'.');
-	} else if dst == 1 && path[0] == b'/' {
+	} else if path[..dst] == "/" {
 		path.truncate(1);
 	} else {
 		path.truncate(dst - 1);
