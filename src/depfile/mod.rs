@@ -17,6 +17,10 @@ pub fn read_deps_file(
 	read_deps_file_from(File::open(file_name)?, f)
 }
 
+/// Read a Makfile-style dependency file.
+///
+/// `f` is called for every target. The first argument is the target, the
+/// second is the list of dependencies.
 pub fn read_deps_file_from(
 	file: impl Read,
 	mut f: impl FnMut(RawString, Vec<RawString>) -> Result<(), Error>,
