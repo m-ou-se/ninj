@@ -17,50 +17,7 @@ pub fn read_deps_file(
 	read_deps_file_from(File::open(file_name)?, f)
 }
 
-#[derive(Default)]
-struct State {
-	/// The (incomplete) path we're currently reading.
-	path: RawString,
-	/// The target, once we've finished reading it.
-	target: Option<RawString>,
-	/// The rest of the paths we've finished reading.
-	deps: Vec<RawString>,
-}
-
-impl State {
-	fn add_part(&mut self, s: &RawStr) {
-		self.path.push_str(s);
-	}
-	fn finish_path(&mut self) -> Result<(), Error> {
-		if !self.path.is_empty() {
-			let mut path = replace(&mut self.path, RawString::new());
-			if self.target.is_none() && path.last() == Some(b':') {
-				path.pop();
-				self.target = Some(path);
-			} else if self.target.is_none() {
-				return Err(Error::new(
-					ErrorKind::InvalidData,
-					"Rule in dependency file has multiple outputs",
-				));
-			} else {
-				self.deps.push(path);
-			}
-		}
-		Ok(())
-	}
-	fn finish_deps(
-		&mut self,
-		f: &mut impl FnMut(RawString, Vec<RawString>) -> Result<(), Error>,
-	) -> Result<(), Error> {
-		self.finish_path()?;
-		if let Some(target) = self.target.take() {
-			f(target, replace(&mut self.deps, Vec::new()))?;
-		}
-		Ok(())
-	}
-}
-
-fn read_deps_file_from(
+pub fn read_deps_file_from(
 	file: impl Read,
 	mut f: impl FnMut(RawString, Vec<RawString>) -> Result<(), Error>,
 ) -> Result<(), Error> {
@@ -132,6 +89,49 @@ fn read_deps_file_from(
 		Ok(())
 	} else {
 		Err(Error::new(ErrorKind::InvalidData, "Unexpected end of file"))
+	}
+}
+
+#[derive(Default)]
+struct State {
+	/// The (incomplete) path we're currently reading.
+	path: RawString,
+	/// The target, once we've finished reading it.
+	target: Option<RawString>,
+	/// The rest of the paths we've finished reading.
+	deps: Vec<RawString>,
+}
+
+impl State {
+	fn add_part(&mut self, s: &RawStr) {
+		self.path.push_str(s);
+	}
+	fn finish_path(&mut self) -> Result<(), Error> {
+		if !self.path.is_empty() {
+			let mut path = replace(&mut self.path, RawString::new());
+			if self.target.is_none() && path.last() == Some(b':') {
+				path.pop();
+				self.target = Some(path);
+			} else if self.target.is_none() {
+				return Err(Error::new(
+					ErrorKind::InvalidData,
+					"Rule in dependency file has multiple outputs",
+				));
+			} else {
+				self.deps.push(path);
+			}
+		}
+		Ok(())
+	}
+	fn finish_deps(
+		&mut self,
+		f: &mut impl FnMut(RawString, Vec<RawString>) -> Result<(), Error>,
+	) -> Result<(), Error> {
+		self.finish_path()?;
+		if let Some(target) = self.target.take() {
+			f(target, replace(&mut self.deps, Vec::new()))?;
+		}
+		Ok(())
 	}
 }
 
