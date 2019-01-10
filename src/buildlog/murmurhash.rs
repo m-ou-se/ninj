@@ -4,6 +4,9 @@ const SEED: u64 = 0xdecafbaddecafbad;
 const M: u64 = 0xc6a4a7935bd1e995;
 const R: u32 = 47;
 
+/// Calculate the 'Murmur 64A' hash.
+///
+/// This is used as the hash for the commands in the build log.
 pub fn murmur_hash_64a(key: &[u8]) -> u64 {
 	let mut h = SEED ^ M.wrapping_mul(key.len() as u64);
 	let mut iter = key.chunks_exact(8);

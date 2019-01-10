@@ -10,11 +10,13 @@ mod murmurhash;
 
 pub use self::murmurhash::murmur_hash_64a;
 
+/// The latest entries for all targets in the build log.
 #[derive(Clone, Debug)]
 pub struct BuildLog {
 	pub entries: BTreeMap<RawString, Entry>,
 }
 
+/// An entry in the build log for a specific target.
 #[derive(Clone, Debug)]
 pub struct Entry {
 	pub start_time_ms: u32,
@@ -24,14 +26,17 @@ pub struct Entry {
 }
 
 impl BuildLog {
+	/// Create an empty build log.
 	pub fn new() -> BuildLog {
 		BuildLog { entries: BTreeMap::new() }
 	}
 
+	/// Read a build log from a file.
 	pub fn read(file: impl AsRef<Path>) -> Result<BuildLog, Error> {
 		BuildLog::read_from(File::open(file)?)
 	}
 
+	/// Read a build log.
 	pub fn read_from(file: File) -> Result<BuildLog, Error> {
 		let mut file = BufReader::new(file);
 
