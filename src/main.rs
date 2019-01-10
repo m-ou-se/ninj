@@ -87,7 +87,6 @@ fn main() {
 			}
 		}
 	}
-	println!("Done");
 
 	let build_log = BuildLog::read(spec.build_dir.as_path().join(".ninja_log")).unwrap_or_else(|e| {
 		eprintln!("Error while reading .ninja_log: {}", e);
