@@ -1,4 +1,4 @@
-//! Everything related to the `.ninja_deps` file format.
+//! Reading and writing dependency logs (i.e. `.ninja_deps` files).
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 use indexmap::map::IndexMap;
@@ -9,21 +9,22 @@ use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
 use std::mem::replace;
 use std::path::Path;
 
-/// Represents the contents of a dependency log (from a `.ninja_deps` file).
+/// Represents the contents of a `.ninja_deps` file.
 #[derive(Clone, Debug)]
 pub struct DepLog {
 	records: IndexMap<RawString, Option<Record>>,
 }
 
-/// Represents a `./ninja_deps` file, and allows making additions to it.
+/// Represents a `.ninja_deps` file, and allows making additions to it.
 #[derive(Debug)]
 pub struct DepLogMut {
 	deps: DepLog,
 	file: BufWriter<File>,
 }
 
+/// The information you get out of a `DepLog` for a specific target.
 #[derive(Clone, Copy, Debug)]
-pub struct Deps<'a> {
+pub struct TargetInfo<'a> {
 	record: &'a Record,
 	log: &'a DepLog,
 }
@@ -47,14 +48,14 @@ impl DepLog {
 	}
 
 	/// Look up a target in the log.
-	pub fn get(&self, path: &RawStr) -> Option<Deps> {
-		self.records.get(path).and_then(|v| v.as_ref().map(|r| Deps { record: r, log: self }))
+	pub fn get(&self, path: &RawStr) -> Option<TargetInfo> {
+		self.records.get(path).and_then(|v| v.as_ref().map(|r| TargetInfo { record: r, log: self }))
 	}
 
 	/// Iterate over all targets in the log.
-	pub fn iter(&self) -> impl Iterator<Item=(&RawStr, Deps)> {
+	pub fn iter(&self) -> impl Iterator<Item=(&RawStr, TargetInfo)> {
 		let log = self;
-		self.records.iter().flat_map(move |(k, v)| v.as_ref().map(move |v| (&k[..], Deps { record: v, log })))
+		self.records.iter().flat_map(move |(k, v)| v.as_ref().map(move |v| (&k[..], TargetInfo { record: v, log })))
 	}
 
 	/// Read a log from a file.
@@ -196,7 +197,7 @@ impl DepLog {
 	}
 }
 
-impl<'a> Deps<'a> {
+impl<'a> TargetInfo<'a> {
 	/// Get the `mtime` that was recorded in the log.
 	pub fn mtime(&self) -> u64 {
 		self.record.mtime

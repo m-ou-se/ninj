@@ -1,4 +1,4 @@
-//! Everything related to the `.ninja_log` file format.
+//! Reading and writing build logs (i.e. `.ninja_log` files).
 
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;

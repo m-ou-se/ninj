@@ -1,4 +1,4 @@
-//! Parsing of Makefile-style dependency files.
+//! Reading Makefile-style dependency files.
 
 use raw_string::{RawStr, RawString};
 use std::fs::File;
