@@ -11,6 +11,7 @@ structopt = "0.2.14"
 crossbeam = "0.6.0"
 byteorder = "1.2.7"
 memchr = "2.1.2"
+indexmap = "1.0.2"
 
 [profile.dev]
 opt-level = 3

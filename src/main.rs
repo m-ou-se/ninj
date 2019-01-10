@@ -105,18 +105,18 @@ fn main() {
 			"graph" => generate_graph(&spec),
 			"log" => println!("{:#?}", build_log),
 			"deps" => {
-				for record in &deps_file.records {
-					if let Some(deps) = &record.deps {
-						if target_to_rule.contains_key(&record.path[..]) {
+				for (path, deps) in &deps_file.records {
+					if let Some(deps) = deps {
+						if target_to_rule.contains_key(&path[..]) {
 							let mtime = || {
-								std::fs::metadata(record.path.as_path())
+								std::fs::metadata(path.as_path())
 									.and_then(|m| m.modified())
 									.unwrap_or(UNIX_EPOCH)
 							};
 							let deps_mtime = UNIX_EPOCH + Duration::from_nanos(deps.mtime);
 							println!(
 								"{}: #deps {}, deps mtime {}.{:09} ({})",
-								record.path,
+								path,
 								deps.deps.len(),
 								deps.mtime / 1_000_000_000,
 								deps.mtime % 1_000_000_000,
@@ -127,7 +127,7 @@ fn main() {
 								}
 							);
 							for &dep in &deps.deps {
-								println!("    {}", deps_file.records[dep as usize].path);
+								println!("    {}", deps_file.records.get_index(dep as usize).unwrap().0);
 							}
 							println!();
 						}
@@ -152,8 +152,6 @@ fn main() {
 		})
 	});
 
-	let target_to_dep_file = deps_file.index_targets();
-
 	let mut stat_cache = StatCache::new();
 
 	let mut queue = BuildQueue::new(
@@ -170,21 +168,22 @@ fn main() {
 					if output_time.map_or(true, |m| m > mtime) {
 						output_time = Some(mtime);
 					}
-					if let Some(&dep_i) = target_to_dep_file.get(&output[..]) {
-						let record = deps_file.records[dep_i].deps.as_ref().unwrap();
-						if UNIX_EPOCH + Duration::from_nanos(record.mtime) < mtime {
-							// Our dependency information is outdated, so treat the target as outdated.
-							output_time = None;
-							outdated = true;
-							break;
-						}
-						for &dep in &record.deps {
-							let dep_mtime = stat_cache.mtime(deps_file.records[dep as usize].path.as_path());
-							if dep_mtime.map_or(true, |m| m > mtime) {
-								// This recorded dependency is newer than the output, so we're definitely outdated.
+					if let Some(deps) = deps_file.records.get(&output[..]) {
+						if let Some(record) = deps.as_ref() {
+							if UNIX_EPOCH + Duration::from_nanos(record.mtime) < mtime {
+								// Our dependency information is outdated, so treat the target as outdated.
 								output_time = None;
 								outdated = true;
 								break;
+							}
+							for &dep in &record.deps {
+								let dep_mtime = stat_cache.mtime(deps_file.records.get_index(dep as usize).unwrap().0.as_path());
+								if dep_mtime.map_or(true, |m| m > mtime) {
+									// This recorded dependency is newer than the output, so we're definitely outdated.
+									output_time = None;
+									outdated = true;
+									break;
+								}
 							}
 						}
 					}
