@@ -7,8 +7,9 @@
 //!
 //! - **`build.ninja` files**
 //!
-//!   The [`spec`] module contains everything you need to parse `build.ninja` files,
-//!   including variable expansion, including other ninja files, and resolving build rules.
+//!   The [`spec`] module contains everything you need to parse `build.ninja`
+//!   files, including variable expansion, traversing other ninja files, and
+//!   resolving build rules.
 //!
 //! - **`.ninja_log` files**
 //!
