@@ -37,9 +37,9 @@
 //!
 //! - **Reading of `mtime`s**
 //!
-//!   The [`mtime`](crate::mtime) module contains an [`mtime`][mtime::mtime]
-//!   function, but also has a [`StatCache`][mtime::StatCache] which helps to
-//!   reducing the number of `stat()` syscalls.
+//!   The [`mtime`] module contains an [`mtime`][mtime::mtime] function, but
+//!   also has a [`StatCache`][mtime::StatCache] which helps to reducing the
+//!   number of `stat()` syscalls.
 
 pub mod buildlog;
 pub mod depfile;
