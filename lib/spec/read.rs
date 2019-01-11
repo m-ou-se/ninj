@@ -226,14 +226,14 @@ fn read_into<'a: 'p, 'p>(
 			Statement::Include { path } => {
 				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
-				let path = loc.map_error(path.to_pathbuf())?;
+				let path = loc.map_error(path.to_path())?;
 				let source = RawStr::from_bytes(pile.add(loc.map_error(read_bytes(&path))?));
 				read_into(&file_name.with_file_name(path), source, pile, spec, scope, pools)?;
 			}
 			Statement::SubNinja { path } => {
 				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
-				let path = loc.map_error(path.to_pathbuf())?;
+				let path = loc.map_error(path.to_path())?;
 				let subpile = Pile::new();
 				let source = loc.map_error(read_bytes(&path))?;
 				let mut subscope = scope.new_subscope();

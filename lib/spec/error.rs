@@ -222,8 +222,8 @@ impl From<ExpansionError> for ReadError {
 	}
 }
 
-impl From<std::string::FromUtf8Error> for ReadError {
-	fn from(_: std::string::FromUtf8Error) -> ReadError {
+impl From<std::str::Utf8Error> for ReadError {
+	fn from(_: std::str::Utf8Error) -> ReadError {
 		ReadError::InvalidUtf8 { var: None }
 	}
 }
@@ -246,8 +246,8 @@ impl From<ErrorWithLocation<ExpansionError>> for ErrorWithLocation<ReadError> {
 	}
 }
 
-impl From<ErrorWithLocation<std::string::FromUtf8Error>> for ErrorWithLocation<ReadError> {
-	fn from(src: ErrorWithLocation<std::string::FromUtf8Error>) -> Self {
+impl From<ErrorWithLocation<std::str::Utf8Error>> for ErrorWithLocation<ReadError> {
+	fn from(src: ErrorWithLocation<std::str::Utf8Error>) -> Self {
 		src.convert()
 	}
 }
