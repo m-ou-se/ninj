@@ -1,3 +1,5 @@
+//! Getting the `mtime` of files to check if they're outdated.
+
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::io::Error;
