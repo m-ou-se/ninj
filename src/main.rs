@@ -1,11 +1,10 @@
 mod graph;
 mod queue;
-mod statcache;
 mod timeformat;
 
 use self::graph::generate_graph;
 use self::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
-use self::statcache::StatCache;
+use ninj::mtime::StatCache;
 use self::timeformat::MinSec;
 use ninj::buildlog::BuildLog;
 use ninj::deplog::DepLog;
@@ -172,7 +171,7 @@ fn main() {
 			let mut output_time = None;
 			let mut outdated = false;
 			for output in &rule.outputs {
-				if let Some(mtime) = stat_cache.mtime(output.as_path()) {
+				if let Some(mtime) = stat_cache.mtime(output.as_path()).unwrap() {
 					if output_time.map_or(true, |m| m > mtime) {
 						output_time = Some(mtime);
 					}
@@ -184,7 +183,7 @@ fn main() {
 							break;
 						}
 						for dep in deps.deps() {
-							let dep_mtime = stat_cache.mtime(dep.as_path());
+							let dep_mtime = stat_cache.mtime(dep.as_path()).unwrap();
 							if dep_mtime.map_or(true, |m| m > mtime) {
 								// This recorded dependency is newer than the output, so we're definitely outdated.
 								output_time = None;
@@ -210,7 +209,7 @@ fn main() {
 				if let Some(&task) = task {
 					dependencies.push(DepInfo { task: task, order_only });
 				}
-				if let Some(mtime) = stat_cache.mtime(input.as_path()) {
+				if let Some(mtime) = stat_cache.mtime(input.as_path()).unwrap() {
 					if output_time.map_or(false, |m| m < mtime) {
 						outdated = true;
 					}
