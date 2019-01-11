@@ -1,9 +1,8 @@
 mod graph;
-mod queue;
 mod timeformat;
 
 use self::graph::generate_graph;
-use self::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
+use ninj::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
 use ninj::mtime::StatCache;
 use self::timeformat::MinSec;
 use ninj::buildlog::BuildLog;

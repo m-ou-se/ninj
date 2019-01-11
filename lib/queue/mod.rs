@@ -1,52 +1,31 @@
+//! Tracking of which tasks need to be executed in what order.
+//!
+//! A [`BuildQueue`][self::queue::BuildQueue] tracks which tasks need to be
+//! executed, with very minimal information about those tasks. It barely knows
+//! anything about the tasks, and only refers to them by 'task number', which is
+//! simply an index into a vector.
+
 use std::mem::replace;
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum TaskStatus {
-	/// The task does not appear in the dependency tree of the targets we want.
-	NotNeeded,
-	/// The task does appear in the dependency tree, but we don't know anything
-	/// about the task yet.
-	///
-	/// Only happens while we're building the dependency tree.
-	WillBeNeeded,
-	/// The task appears in the dependency tree.
-	///
-	/// If `n_deps_left` is zero, it is ready to be run.
-	///
-	/// If it is not outdated, it does not need to run.
-	/// It might be marked as outdated later.
-	Needed {
-		phony: bool,
-		outdated: bool,
-	},
-	/// The task is running.
-	Running {
-		start_time: Instant,
-	},
-	/// The task is finished.
-	Finished {
-		running_time: Duration,
-		was_outdated: bool,
-	},
-	/// The task was not run but can be considered 'finished', as it was not outdated.
-	NotRun,
-	/// The task is phony, and is fulfilled.
-	PhonyFinished,
-}
-
-#[derive(Clone, Debug)]
-pub struct Task {
-	/// Status of this task.
-	status: TaskStatus,
-	/// Build rules which depend on this build rule.
-	next: Vec<DepInfo>,
-	/// Number of unfinished build rules which have this rule in their `next` list.
-	n_deps_left: usize,
-}
-
-/// A BuildQueue which knows in which order tasks may execute.
+/// Knows which tasks should be executed, and in what order.
+///
+/// The `BuildQueue` is de-coupled from any details of what the tasks actually
+/// are. It only knows about task numbers, and tracks only very minimal
+/// information of each task:
+///
+///  - The state (waiting, running, finished, etc.),
+///  - whether it is a 'phony' task,
+///  - whether it was marked as outdated, and
+///  - the task numbers of the tasks it depends on.
+///
+/// The [`next`][Self::next] method gives the next task to be run. After the
+/// task is done, [`complete_task`][Self::complete_task] should be called to
+/// update the queue.
+///
+/// [`make_async`][Self::make_async] turns this into a concurrent
+/// data-structure on which threads can [wait][LockedAsyncBuildQueue::wait].
 #[derive(Clone)]
 pub struct BuildQueue {
 	/// Information related to build rules.
@@ -57,51 +36,116 @@ pub struct BuildQueue {
 	ready: Vec<usize>,
 	/// Number of non-phony tasks which still need to be started.
 	///
-	/// Includes tasks which are not oudated, but might turn out to be outdated later.
+	/// Includes tasks which are not oudated, but might turn out to be outdated
+	/// later.
 	n_left: usize,
 }
 
+/// The tasks tracked by a [`BuildQueue`].
+#[derive(Clone, Debug)]
+pub struct Task {
+	/// Status of this task.
+	status: TaskStatus,
+	/// Build rules which depend on this build rule.
+	next: Vec<DepInfo>,
+	/// Number of unfinished build rules which have this rule in their `next`
+	/// list.
+	n_deps_left: usize,
+}
+
+/// The status of a [`Task`] inside a [`BuildQueue`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TaskStatus {
+	/// The task does not appear in the dependency tree of the targets we want.
+	NotNeeded,
+	/// The task does appear in the dependency tree, but we don't know anything
+	/// about the task yet.
+	///
+	/// Only exists while building up the dependency tree (e.g. inside
+	/// [`BuildQueue::new`], but never inside a [`BuildQueue`]).
+	WillBeNeeded,
+	/// The task appears in the dependency tree.
+	///
+	/// If [`Task::n_deps_left`] is zero, it is ready to be run.
+	///
+	/// If it is not outdated, it does not need to run.
+	/// It might be marked as outdated later.
+	Needed {
+		phony: bool,
+		outdated: bool,
+	},
+	/// The task is running.
+	Running {
+		/// The time since when it has been running.
+		start_time: Instant,
+	},
+	/// The task is finished.
+	Finished {
+		/// The time it took to run this task.
+		running_time: Duration,
+		/// Whether running this task caused the tasks dependent on this one to
+		/// become outdated.
+		was_outdated: bool,
+	},
+	/// The task was not outdated, so did not need to be run.
+	NotRun,
+	/// The task is phony and was outdated, and all dependencies have been
+	/// finished.
+	PhonyFinished,
+}
+
+/// Wraps a [`BuildQueue`] to allow multiple threads to use it and wait for it.
 pub struct AsyncBuildQueue {
 	queue: Mutex<BuildQueue>,
 	condvar: Condvar,
 }
 
+/// A lock on a [`AsyncBuildQueue`], which prevents other threads from
+/// accessing the queue.
 pub struct LockedAsyncBuildQueue<'a> {
 	queue: MutexGuard<'a, BuildQueue>,
 	condvar: &'a Condvar,
 }
 
+/// The information the [`BuildQueue`] needs for each task.
+///
+/// [`BuildQueue::new`] requires [`dependencies`][Self::dependencies] to be
+/// <code>IntoIter&lt;Item = <a href="struct.DepInfo.html">DepInfo</a>&gt;</code>.
+#[derive(Debug, Clone, Copy)]
+pub struct TaskInfo<T> {
+	pub phony: bool,
+	pub dependencies: T,
+	pub outdated: bool,
+}
+
+/// The information the [`BuildQueue`] needs for each task dependency.
 #[derive(Debug, Clone, Copy)]
 pub struct DepInfo {
 	pub task: usize,
 	pub order_only: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct TaskInfo<T: IntoIterator<Item = DepInfo>> {
-	pub phony: bool,
-	pub dependencies: T,
-	pub outdated: bool,
-}
-
 impl BuildQueue {
 	/// Construct a new build dependency graph.
 	///
-	/// The (potential) tasks are numbered 0 to `max_task_num`.
+	/// - The (potential) tasks are numbered 0 to `max_task_num`.
+	///   ([`Task`]s will be stored in a vector of this size.)
 	///
-	/// `targets` are the tasks that need to be executed.
+	/// - `targets` are the tasks that need to be executed.
 	///
-	/// `get_task` is used to get the dependencies of a task and to see if a
-	/// task is phony. It is called exactly once for every task in the
-	/// dependency tree of the targets.
-	pub fn new<F, D>(
+	/// - `get_task` is used to get the information the queue needs of each
+	///   (relevant) task: Whether it is phony, on which tasks it depends
+	///   (and how), and if the target is outdated. It is called exactly once
+	///   for every task in the dependency tree of the targets.
+	pub fn new<T, F, D>(
 		max_task_num: usize,
-		targets: impl IntoIterator<Item=usize>,
+		targets: T,
 		mut get_task: F,
 	) -> BuildQueue
 		where
+			T: IntoIterator<Item = usize>,
 			F: FnMut(usize) -> TaskInfo<D>,
-			D: IntoIterator<Item=DepInfo>,
+			D: IntoIterator<Item = DepInfo>,
 	{
 
 		let mut tasks = vec![
@@ -183,8 +227,8 @@ impl BuildQueue {
 		queue
 	}
 
-	/// Turn the BuildQueue into an AsyncBuildQueue, which can be used from
-	/// multiple threads at once.
+	/// Turn the [`BuildQueue`] into an [`AsyncBuildQueue`], which can be used
+	/// concurrently from multiple threads.
 	pub fn make_async(self) -> AsyncBuildQueue {
 		AsyncBuildQueue {
 			queue: Mutex::new(self),
@@ -216,6 +260,9 @@ impl BuildQueue {
 	}
 
 	/// Mark the task as ready, possibly queueing dependent tasks.
+	///
+	/// `was_outdated` should be set to true if any tasks depending on this
+	/// task should be marked as outdated.
 	///
 	/// Returns the number of newly ready tasks that were unblocked by the
 	/// completion of this one.
@@ -287,16 +334,23 @@ impl BuildQueue {
 		newly_ready
 	}
 
+	/// Get the status of a task.
 	pub fn get_task_status(&self, task: usize) -> TaskStatus {
 		self.tasks[task].status
 	}
 
+	/// Number of tasks left.
+	///
+	/// Does not include phony tasks.
+	/// Does include tasks which are not marked as outdated, but might be later
+	/// because a (indirect) dependencies is outdated.
 	pub fn n_left(&self) -> usize {
 		self.n_left
 	}
 }
 
 impl AsyncBuildQueue {
+	/// Get exclusive access to the build queue.
 	pub fn lock(&self) -> LockedAsyncBuildQueue {
 		LockedAsyncBuildQueue {
 			queue: self.queue.lock().unwrap(),
@@ -310,6 +364,8 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 	///
 	/// Returns the index of the task. Will never return a phony tasks, as
 	/// those don't have any work to do.
+	///
+	/// Does not block.
 	pub fn next(&mut self) -> Option<usize> {
 		let next = self.queue.next();
 		if next.is_some() {
@@ -322,7 +378,7 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 
 	/// Wait for something to do.
 	///
-	/// Returns None when all tasks are finished.
+	/// Returns `None` when all tasks are finished.
 	pub fn wait(mut self) -> Option<usize> {
 		while self.queue.ready.is_empty() && self.queue.n_left > 0 {
 			self.queue = self.condvar.wait(self.queue).unwrap();
@@ -344,6 +400,10 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 		}
 	}
 
+	/// Get a full copy of the internal state.
+	///
+	/// This is useful if you want to inspect the full state without blocking
+	/// other threads.
 	pub fn clone_queue(&self) -> BuildQueue {
 		self.queue.clone()
 	}
