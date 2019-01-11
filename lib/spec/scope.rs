@@ -46,7 +46,8 @@ pub struct BuildScope<'a> {
 	pub build_vars: &'a [ExpandedVar<'a>],
 }
 
-/// The scope which includes `build` and the `run` variables, and `$in` and `$out`.
+/// The scope which includes both the `build` and the `rule` variables, and
+/// `$in`, `$in_newline` and `$out`.
 ///
 /// The built-in variables (`$command`, `$description`, etc.) are looked up in this scope.
 #[derive(Debug)]
