@@ -1,12 +1,14 @@
 //! Reading and writing build logs (i.e. `.ninja_log` files).
 
 use crate::mtime::Timestamp;
+use crate::spec::BuildRule;
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Error, ErrorKind};
+use std::io::{BufRead, BufReader, BufWriter, Error, ErrorKind, Write};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Instant, Duration};
+use std::iter::FromIterator;
 
 mod murmurhash;
 
@@ -49,11 +51,23 @@ impl BuildLog {
 		if self.entries.is_empty() {
 			None
 		} else {
-			let mut sum_ms = 0 as u64;
+			let mut sum_ms = 0;
 			for (_output, entry) in self.entries.iter() {
 				sum_ms += (entry.end_time_ms - entry.start_time_ms) as u64;
 			}
 			Some(Duration::from_millis(sum_ms / self.entries.len() as u64))
+		}
+	}
+
+	pub fn add_entry(&mut self, rule: &BuildRule, build_starttime: Instant, starttime: Instant, endtime: Instant) {
+		let command = &rule.command.as_ref().expect("Got phony rule").command;
+		for output in &rule.outputs {
+			self.entries.insert(output.clone(), Entry {
+				start_time_ms: (starttime - build_starttime).as_millis() as u32,
+				end_time_ms:   (endtime - build_starttime).as_millis() as u32,
+				restat_mtime:  None,
+				command_hash:  murmur_hash_64a(command.as_bytes()),
+			});
 		}
 	}
 
@@ -66,6 +80,33 @@ impl BuildLog {
 			)
 		})?;
 		BuildLog::read_from(file)
+	}
+
+	pub fn write(&self, file: impl AsRef<Path>) -> Result<(), Error> {
+		// TODO: should we append to this file instead of truncating it?
+		self.write_to(File::create(file)?)
+	}
+
+	pub fn write_to(&self, file: File) -> Result<(), Error> {
+		let mut file = BufWriter::new(file);
+
+		file.write(b"# ninja log v5\n")?;
+
+		// Write entries in order of finishing time. Note that this removes all
+		// 'dead' entries immediately, while ninja would only do that later.
+
+		let mut entries = Vec::from_iter(&self.entries);
+		entries.sort_by(|(_, left), (_, right)| right.end_time_ms.cmp(&left.end_time_ms));
+		for (output, entry) in entries {
+			write!(file, "{}\t{}\t{}\t{}\t{:x}\n",
+				entry.start_time_ms,
+				entry.end_time_ms,
+				entry.restat_mtime.map_or(0, Timestamp::to_nanos),
+				output,
+				entry.command_hash)?;
+		}
+
+		Ok(())
 	}
 
 	/// Read a build log.

@@ -90,7 +90,7 @@ pub fn show_build_status(
 	status: &BuildStatus,
 	queue: &AsyncBuildQueue,
 	spec: &Spec,
-	build_log: &BuildLog,
+	build_log: &Mutex<BuildLog>,
 	sleep: bool,
 ) {
 	let mut lock = status.inner.lock().unwrap();
@@ -170,7 +170,7 @@ pub fn show_build_status(
 							match taskstatus {
 								TaskStatus::Running{start_time, ..} => {
 									let runtime = if simulated_time > start_time { simulated_time - start_time } else { Duration::from_millis(0) };
-									match estimated_total_task_time(spec, *task, build_log) {
+									match estimated_total_task_time(spec, *task, &build_log.lock().unwrap()) {
 										Some(time) => Some((i, task, time.checked_sub(runtime).unwrap_or(Duration::from_millis(0)))),
 										None => None,
 									}

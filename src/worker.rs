@@ -1,4 +1,5 @@
 use log::{debug, error};
+use ninj::buildlog::BuildLog;
 use ninj::depfile::read_deps_file;
 use ninj::deplog::DepLogMut;
 use ninj::mtime::Timestamp;
@@ -8,6 +9,7 @@ use raw_string::unix::RawStrExt;
 use std::io::Error;
 use std::process::exit;
 use std::sync::Mutex;
+use std::time::Instant;
 
 /// A worker that executes tasks of a [`Spec`] according to a [`BuildQueue`].
 pub struct Worker<'a> {
@@ -17,6 +19,8 @@ pub struct Worker<'a> {
 	pub status_updater: &'a (dyn StatusUpdater + Sync),
 	pub sleep: bool,
 	pub dep_log: &'a Mutex<DepLogMut>,
+	pub build_log: &'a Mutex<BuildLog>,
+	pub start_time: Instant,
 }
 
 /// Something that a [`Worker`] can report its status to.
@@ -50,6 +54,8 @@ impl<'a> Worker<'a> {
 			status_updater,
 			sleep,
 			dep_log,
+			build_log,
+			start_time
 		} = self;
 		let log = format!("ninj::worker-{}", id);
 		let mut lock = queue.lock();
@@ -66,6 +72,7 @@ impl<'a> Worker<'a> {
 				// There are no remaining jobs
 				break;
 			};
+			let worker_start_time = Instant::now();
 			status_updater.running(id, task);
 			let restat;
 			let mut restat_fn;
@@ -137,6 +144,7 @@ impl<'a> Worker<'a> {
 					restat = None;
 				}
 			}
+			build_log.lock().unwrap().add_entry(&spec.build_rules[task], start_time, worker_start_time, Instant::now());
 			lock = queue.lock();
 			lock.complete_task(task, restat);
 		}

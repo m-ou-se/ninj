@@ -101,11 +101,11 @@ fn main() {
 
 	let target_to_rule = spec.make_index();
 
-	let build_log = BuildLog::read(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
+	let build_log = Mutex::new(BuildLog::read(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
 		error!("Error while reading .ninja_log: {}", e);
 		error!("Not using .ninja_log.");
 		BuildLog::new()
-	});
+	}));
 
 	let dep_log = DepLogMut::open(spec.build_dir().join(".ninja_deps")).unwrap_or_else(|e| {
 		error!("Error while reading .ninja_deps: {}", e);
@@ -182,6 +182,8 @@ fn main() {
 				status_updater: &status,
 				sleep: opt.sleep_run,
 				dep_log: &dep_log,
+				build_log: &build_log,
+				start_time: start_time,
 			};
 			scope.spawn(move |_| worker.run().unwrap());
 		}
@@ -192,4 +194,9 @@ fn main() {
 		}
 	})
 	.unwrap();
+
+	build_log.lock().unwrap().write(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
+		eprintln!("Unable to store logfile: {}", e);
+		exit(1);
+	});
 }
