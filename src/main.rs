@@ -7,11 +7,11 @@ use ninj::mtime::StatCache;
 use self::timeformat::MinSec;
 use ninj::buildlog::BuildLog;
 use ninj::deplog::DepLog;
-use ninj::spec::{read, BuildRuleCommand};
+use ninj::spec::read;
 use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::process::exit;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant, UNIX_EPOCH};
@@ -86,13 +86,15 @@ fn main() {
 		}
 	}
 
-	let build_log = BuildLog::read(spec.build_dir.as_path().join(".ninja_log")).unwrap_or_else(|e| {
+	let build_dir = spec.build_dir.as_ref().map_or(Path::new(""), |p| p.as_path());
+
+	let build_log = BuildLog::read(build_dir.join(".ninja_log")).unwrap_or_else(|e| {
 		eprintln!("Error while reading .ninja_log: {}", e);
 		eprintln!("Not using .ninja_log.");
 		BuildLog::new()
 	});
 
-	let dep_log = DepLog::read(spec.build_dir.as_path().join(".ninja_deps")).unwrap_or_else(|e| {
+	let dep_log = DepLog::read(build_dir.join(".ninja_deps")).unwrap_or_else(|e| {
 		eprintln!("Error while reading .ninja_deps: {}", e);
 		eprintln!("Not using .ninja_deps.");
 		DepLog::new()
@@ -133,10 +135,7 @@ fn main() {
 			"targets" => {
 				for target in &spec.build_rules {
 					for output in &target.outputs {
-						println!("{}: {}", output, match &target.command {
-							BuildRuleCommand::Phony => "phony",
-							BuildRuleCommand::Command { rule_name, .. } => rule_name,
-						});
+						println!("{}: {}", output, target.command.as_ref().map_or("phony", |c| &c.rule_name));
 					}
 				}
 			}
@@ -226,19 +225,13 @@ fn main() {
 	if opt.dry_run {
 		let n_tasks = queue.n_left();
 		while let Some(task) = queue.next() {
-			match &spec.build_rules[task].command {
-				BuildRuleCommand::Phony => unreachable!("Got phony task."),
-				BuildRuleCommand::Command {
-					description, command, ..
-				} => {
-					let label = if opt.verbose || description.is_empty() {
-						command
-					} else {
-						description
-					};
-					println!("[{}/{}] {}", n_tasks - queue.n_left(), n_tasks, label);
-				}
+			let c = spec.build_rules[task].command.as_ref().expect("Got phony task.");
+			let label = if opt.verbose || c.description.is_empty() {
+				&c.command
+			} else {
+				&c.description
 			};
+			println!("[{}/{}] {}", n_tasks - queue.n_left(), n_tasks, label);
 			queue.complete_task(task, true);
 		}
 		exit(0);
@@ -308,13 +301,10 @@ fn main() {
 						break;
 					};
 					status.set_status(i, WorkerStatus::Running { task });
-					let command = match &spec.build_rules[task].command {
-						BuildRuleCommand::Phony => unreachable!("Got phony task."),
-						BuildRuleCommand::Command { command, .. } => command,
-					};
 					if opt.sleep_run {
 						std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
 					} else {
+						let command = &spec.build_rules[task].command.as_ref().expect("Got phony task.").command;
 						let status = std::process::Command::new("sh")
 							.arg("-c")
 							.arg(command.as_osstr())
@@ -367,20 +357,16 @@ fn main() {
 						println!("=> \x1b[32mDone\x1b[K\x1b[m");
 					}
 					WorkerStatus::Running { task } => {
-						match &spec.build_rules[*task].command {
-							BuildRuleCommand::Phony => {}
-							BuildRuleCommand::Command { description, .. } => {
-								let statustext = match queuestate.get_task_status(*task) {
-									TaskStatus::Running { start_time } => {
-										format!("{}", MinSec::since(start_time))
-									},
-									x => {
-										format!("{:?}", x)
-									}
-								};
-								println!("=> [{t}] \x1b[33m{d} ...\x1b[K\x1b[m", d=description, t=statustext);
+						let command = spec.build_rules[*task].command.as_ref().expect("Got phony task");
+						let statustext = match queuestate.get_task_status(*task) {
+							TaskStatus::Running { start_time } => {
+								format!("{}", MinSec::since(start_time))
+							},
+							x => {
+								format!("{:?}", x)
 							}
-						}
+						};
+						println!("=> [{t}] \x1b[33m{d} ...\x1b[K\x1b[m", d=command.description, t=statustext);
 					},
 				}
 			}

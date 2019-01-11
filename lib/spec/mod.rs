@@ -16,9 +16,12 @@ use raw_string::RawString;
 /// The result of reading a `build.ninja` file, the specification of how to build what.
 #[derive(Debug)]
 pub struct Spec {
+	/// All the build rules.
 	pub build_rules: Vec<BuildRule>,
+	/// The targets to build by default.
 	pub default_targets: Vec<RawString>,
-	pub build_dir: RawString,
+	/// The build dir specified by `builddir = ..`, if any.
+	pub build_dir: Option<RawString>,
 }
 
 /// How to build a set of outputs from a set of inputs.
@@ -26,21 +29,26 @@ pub struct Spec {
 /// The direct result of a single `build` definition in the ninja file.
 #[derive(Debug)]
 pub struct BuildRule {
+	/// The list outputs.
+	///
+	/// Usually just one.
+	///
+	/// Never empty, if produced by [`read`].
 	pub outputs: Vec<RawString>,
+	/// The list of inputs.
 	pub inputs: Vec<RawString>,
+	/// The list of order-only dependencies
 	pub order_deps: Vec<RawString>,
-	pub command: BuildRuleCommand,
+	/// The details of command to run, or `None` for phony rules.
+	pub command: Option<BuildCommand>,
 }
 
 impl BuildRule {
 	/// Check if the build rule is just a phony rule.
 	///
-	/// Returns true iff `command` is `Phony`.
+	/// Returns true iff `command` is `None`.
 	pub fn is_phony(&self) -> bool {
-		match self.command {
-			BuildRuleCommand::Phony => true,
-			_ => false,
-		}
+		self.command.is_none()
 	}
 }
 
@@ -53,39 +61,33 @@ pub enum DepStyle {
 	Msvc,
 }
 
-/// The command to run for a `BuildRule`.
+/// The command to run for a non-phony `BuildRule`.
 #[derive(Debug)]
-pub enum BuildRuleCommand {
-	/// Don't run anything: This rule just serves as an alias.
-	Phony,
-
-	/// The command to generate the outputs from the inputs.
-	Command {
-		/// The name of the rule which was used for this build rule.
-		rule_name: String,
-		/// The (shell-escaped) command to be executed.
-		command: RawString,
-		/// The description to be shown to the user.
-		description: RawString,
-		/// The file to read the extra dependencies from.
-		depfile: RawString,
-		/// The way extra dependencies are to be discovered.
-		deps: Option<DepStyle>,
-		/// The message to watch for on standard output for extra dependencies.
-		msvc_deps_prefix: RawString,
-		/// Rule is used to re-invoke the generator. See ninja manual.
-		generator: bool,
-		/// Re-stat the command output to check if they actually changed.
-		restat: bool,
-		/// A file to write before executing the command.
-		rspfile: RawString,
-		/// The contents of the file to write before executing the command.
-		rspfile_content: RawString,
-		/// The name of the pool in which the command should run.
-		pool: String,
-		/// The depth of the pool, i.e. the maximum number of concurrent jobs in the pool.
-		pool_depth: Option<u16>,
-	},
+pub struct BuildCommand {
+	/// The name of the rule which was used for this build rule.
+	pub rule_name: String,
+	/// The (shell-escaped) command to be executed.
+	pub command: RawString,
+	/// The description to be shown to the user.
+	pub description: RawString,
+	/// The file to read the extra dependencies from.
+	pub depfile: RawString,
+	/// The way extra dependencies are to be discovered.
+	pub deps: Option<DepStyle>,
+	/// The message to watch for on standard output for extra dependencies.
+	pub msvc_deps_prefix: RawString,
+	/// Rule is used to re-invoke the generator. See ninja manual.
+	pub generator: bool,
+	/// Re-stat the command output to check if they actually changed.
+	pub restat: bool,
+	/// A file to write before executing the command.
+	pub rspfile: RawString,
+	/// The contents of the file to write before executing the command.
+	pub rspfile_content: RawString,
+	/// The name of the pool in which the command should run.
+	pub pool: String,
+	/// The depth of the pool, i.e. the maximum number of concurrent jobs in the pool.
+	pub pool_depth: Option<u16>,
 }
 
 impl Spec {
@@ -94,7 +96,7 @@ impl Spec {
 		Spec {
 			build_rules: Vec::new(),
 			default_targets: Vec::new(),
-			build_dir: RawString::new(),
+			build_dir: None,
 		}
 	}
 }

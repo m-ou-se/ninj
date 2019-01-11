@@ -2,7 +2,7 @@ use super::error::{ErrorWithLocation, ReadError};
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
 use super::parse::{Parser, Statement, Variable};
 use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, FileScope, Rule, VarScope};
-use super::{BuildRule, BuildRuleCommand, DepStyle, Spec};
+use super::{BuildRule, BuildCommand, DepStyle, Spec};
 use pile::Pile;
 use raw_string::{RawStr, RawString};
 use std::borrow::ToOwned;
@@ -39,7 +39,7 @@ pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
 	let mut pools = vec![("console".to_string(), 1)];
 	read_into(file_name, &source, &pile, &mut spec, &mut scope, &mut pools)?;
 	if let Some(var) = scope.vars.iter_mut().rfind(|var| var.name.as_bytes() == b"builddir") {
-		spec.build_dir = replace(&mut var.value, RawString::new());
+		spec.build_dir = Some(replace(&mut var.value, RawString::new()));
 	}
 	Ok(spec)
 }
@@ -138,7 +138,7 @@ fn read_into<'a: 'p, 'p>(
 				expand_strs_into(&explicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
 
 				let command = if rule_name == "phony" {
-					BuildRuleCommand::Phony
+					None
 				} else {
 					// Look up the rule in the current scope.
 					let rule = scope
@@ -170,7 +170,7 @@ fn read_into<'a: 'p, 'p>(
 					};
 
 					// And then the rest:
-					BuildRuleCommand::Command {
+					Some(BuildCommand {
 						rule_name: rule_name.to_string(),
 						command: expand_var("command")?,
 						description: expand_var("description")?,
@@ -187,7 +187,7 @@ fn read_into<'a: 'p, 'p>(
 						rspfile_content: expand_var("rspfile")?,
 						pool,
 						pool_depth,
-					}
+					})
 				};
 
 				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
