@@ -44,7 +44,7 @@ impl BuildRule {
 }
 
 /// The method of discovering extra dependencies.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepStyle {
 	/// Through a Makefile-formatted file as specified by `depfile`.
 	Gcc,
