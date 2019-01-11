@@ -1,4 +1,6 @@
 //! Everything related to the `build.ninja` file format.
+//!
+//! > `ninja.build` file → [`read()`][spec::read()] → [`Spec`][spec::Spec]
 
 mod canonicalizepath;
 mod eat;
