@@ -1,5 +1,6 @@
 //! Everything related to the `build.ninja` file format.
 
+mod canonicalizepath;
 mod eat;
 mod read;
 
