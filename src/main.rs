@@ -6,8 +6,9 @@ use ninj::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
 use ninj::mtime::StatCache;
 use self::timeformat::MinSec;
 use ninj::buildlog::BuildLog;
-use ninj::deplog::DepLog;
-use ninj::spec::read;
+use ninj::deplog::DepLogMut;
+use ninj::depfile::read_deps_file;
+use ninj::spec::{read, DepStyle};
 use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
@@ -94,10 +95,10 @@ fn main() {
 		BuildLog::new()
 	});
 
-	let dep_log = DepLog::read(build_dir.join(".ninja_deps")).unwrap_or_else(|e| {
+	let dep_log = DepLogMut::open(build_dir.join(".ninja_deps")).unwrap_or_else(|e| {
 		eprintln!("Error while reading .ninja_deps: {}", e);
-		eprintln!("Not using .ninja_deps.");
-		DepLog::new()
+		// TODO: Delete and start a new file.
+		exit(1);
 	});
 
 	if let Some(tool) = opt.tool {
@@ -287,6 +288,8 @@ fn main() {
 		}
 	}
 
+	let dep_log = Mutex::new(dep_log);
+
 	let starttime = Instant::now();
 
 	crossbeam::thread::scope(|scope| {
@@ -296,6 +299,7 @@ fn main() {
 			let spec = &spec;
 			let status = &status;
 			let opt = &opt;
+			let dep_log = &dep_log;
 			scope.spawn(move |_| {
 				let mut lock = queue.lock();
 				loop {
@@ -315,10 +319,10 @@ fn main() {
 					if opt.sleep_run {
 						std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
 					} else {
-						let command = &spec.build_rules[task].command.as_ref().expect("Got phony task.").command;
+						let rule = &spec.build_rules[task].command.as_ref().expect("Got phony task.");
 						let status = std::process::Command::new("sh")
 							.arg("-c")
-							.arg(command.as_osstr())
+							.arg(rule.command.as_osstr())
 							.status()
 							.unwrap_or_else(|e| {
 								eprintln!("Unable to spawn sh process: {}", e);
@@ -327,13 +331,28 @@ fn main() {
 						match status.code() {
 							Some(0) => {}
 							Some(x) => {
-								eprintln!("Exited with status code {}: {}", x, command);
+								eprintln!("Exited with status code {}: {}", x, rule.command);
 								exit(1);
 							}
 							None => {
-								eprintln!("Exited with signal: {}", command);
+								eprintln!("Exited with signal: {}", rule.command);
 								exit(1);
 							}
+						}
+						if rule.deps == Some(DepStyle::Gcc) {
+							read_deps_file(rule.depfile.as_path(), |target, deps| {
+								// TODO: Don't use now().
+								let mtime = std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+								let mtime = mtime.as_secs() * 1_000_000_000 + mtime.subsec_nanos() as u64;
+								dep_log.lock().unwrap().insert_deps(target, mtime, deps).unwrap_or_else(|e| {
+									eprintln!("Unable to update dependency log: {}", e);
+									exit(1);
+								});
+								Ok(())
+							}).unwrap_or_else(|e| {
+								eprintln!("Unable to read dependency file {:?}: {}", rule.depfile, e);
+								exit(1);
+							});
 						}
 					}
 					lock = queue.lock();
