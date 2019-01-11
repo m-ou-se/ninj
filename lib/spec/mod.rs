@@ -33,7 +33,7 @@ pub struct BuildRule {
 	///
 	/// Usually just one.
 	///
-	/// Never empty, if produced by [`read`].
+	/// Never empty, if produced by [`read()`].
 	pub outputs: Vec<RawString>,
 	/// The list of inputs.
 	pub inputs: Vec<RawString>,
