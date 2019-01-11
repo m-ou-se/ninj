@@ -30,10 +30,12 @@ pub fn canonicalize_path_in_place(path: &mut RawString) {
 	// - We still need to process path[src..].
 	// - The output is path[..dst].
 	// - dst <= src, so the two substrings above don't overlap.
-	// - Anything in path[..fixed] is not going to change anymore (only for "/" and "../" prefixes).
+	// - Anything in path[..fixed] is not going to change anymore (only for "/" and
+	//   "../" prefixes).
 	// - fixed <= dst
 
 	// Copies N bytes from path[src..] to path[..dst], and advances src and dst.
+	#[rustfmt::skip]
 	macro_rules! copy {
 		($n:expr) => {
 			let n = $n;
@@ -46,7 +48,7 @@ pub fn canonicalize_path_in_place(path: &mut RawString) {
 			}
 			src += n;
 			dst += n;
-		}
+		};
 	}
 
 	while src < path.len() {
@@ -59,7 +61,10 @@ pub fn canonicalize_path_in_place(path: &mut RawString) {
 		} else if path[src..].starts_with("../") || path[src..] == ".." {
 			if dst > fixed {
 				// Remove '../' together with previous component.
-				dst = path[..dst - 1].bytes().rposition(|c| c == b'/').map_or(0, |n| n + 1);
+				dst = path[..dst - 1]
+					.bytes()
+					.rposition(|c| c == b'/')
+					.map_or(0, |n| n + 1);
 				src += 3;
 			} else {
 				// No previous component. Keep the '../'.
@@ -105,6 +110,7 @@ mod test {
 	}
 
 	#[test]
+	#[rustfmt::skip]
 	fn test_canonicalize_path() {
 		assert_eq!(canonicalize_path_str("".to_string()), "");
 		assert_eq!(canonicalize_path_str("hello".to_string()), "hello");

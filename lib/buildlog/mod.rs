@@ -54,13 +54,16 @@ impl BuildLog {
 			line.pop();
 		}
 
-		let version: u32 =
-			parse(&line[13..]).ok_or_else(|| Error::new(ErrorKind::InvalidData, "Version is not an integer"))?;
+		let version: u32 = parse(&line[13..])
+			.ok_or_else(|| Error::new(ErrorKind::InvalidData, "Version is not an integer"))?;
 
 		if version != 4 && version != 5 {
 			return Err(Error::new(
 				ErrorKind::InvalidData,
-				format!("Unsupported version {} (only version 4 and 5 are supported)", version),
+				format!(
+					"Unsupported version {} (only version 4 and 5 are supported)",
+					version
+				),
 			));
 		}
 
@@ -116,5 +119,7 @@ fn parse<T: std::str::FromStr>(s: &RawStr) -> Option<T> {
 }
 
 fn parse_hex(s: &RawStr) -> Option<u64> {
-	s.to_str().ok().and_then(|s| u64::from_str_radix(s, 16).ok())
+	s.to_str()
+		.ok()
+		.and_then(|s| u64::from_str_radix(s, 16).ok())
 }

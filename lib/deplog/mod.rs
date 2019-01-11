@@ -1,8 +1,8 @@
 //! Reading and writing dependency logs (i.e. `.ninja_deps` files).
 
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
-use indexmap::map::IndexMap;
 use indexmap::map::Entry as IndexMapEntry;
+use indexmap::map::IndexMap;
 use raw_string::{RawStr, RawString};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
@@ -49,13 +49,21 @@ impl DepLog {
 
 	/// Look up a target in the log.
 	pub fn get(&self, path: &RawStr) -> Option<TargetInfo> {
-		self.records.get(path).and_then(|v| v.as_ref().map(|r| TargetInfo { record: r, log: self }))
+		self.records.get(path).and_then(|v| {
+			v.as_ref().map(|r| TargetInfo {
+				record: r,
+				log: self,
+			})
+		})
 	}
 
 	/// Iterate over all targets in the log.
-	pub fn iter(&self) -> impl Iterator<Item=(&RawStr, TargetInfo)> {
+	pub fn iter(&self) -> impl Iterator<Item = (&RawStr, TargetInfo)> {
 		let log = self;
-		self.records.iter().flat_map(move |(k, v)| v.as_ref().map(move |v| (&k[..], TargetInfo { record: v, log })))
+		self.records.iter().flat_map(move |(k, v)| {
+			v.as_ref()
+				.map(move |v| (&k[..], TargetInfo { record: v, log }))
+		})
 	}
 
 	/// Read a log from a file.
@@ -127,7 +135,10 @@ impl DepLog {
 				if records.insert(RawString::from_bytes(name), None).is_some() {
 					return Err(Error::new(
 						ErrorKind::InvalidData,
-						format!("Duplicate path in file: {:?}", records.get_index(id as usize).unwrap().0),
+						format!(
+							"Duplicate path in file: {:?}",
+							records.get_index(id as usize).unwrap().0
+						),
 					));
 				}
 			} else {
@@ -204,17 +215,23 @@ impl<'a> TargetInfo<'a> {
 	}
 
 	/// Get an iterator over the dependencies.
-	pub fn deps(&self) -> impl Iterator<Item=&'a RawStr> + ExactSizeIterator {
+	pub fn deps(&self) -> impl Iterator<Item = &'a RawStr> + ExactSizeIterator {
 		let log = self.log;
-		self.record.deps.iter().map(move |&i| log.path_by_id(i).unwrap())
+		self.record
+			.deps
+			.iter()
+			.map(move |&i| log.path_by_id(i).unwrap())
 	}
 }
 
 impl DepLogMut {
-
 	/// Open and read a dependency log, or start a new one.
 	pub fn open(file: impl AsRef<Path>) -> Result<DepLogMut, Error> {
-		let mut file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(file)?;
+		let mut file = std::fs::OpenOptions::new()
+			.read(true)
+			.write(true)
+			.create(true)
+			.open(file)?;
 		if file.metadata()?.len() == 0 {
 			file.write_all(b"# ninjadeps\n\x04\0\0\0")?;
 			Ok(DepLogMut {
@@ -238,7 +255,8 @@ impl DepLogMut {
 		match entry {
 			IndexMapEntry::Vacant(entry) => {
 				let padding = (4 - entry.key().len() % 4) % 4;
-				self.file.write_u32::<LE>(entry.key().len() as u32 + padding as u32 + 4)?;
+				let size = entry.key().len() as u32 + padding as u32 + 4;
+				self.file.write_u32::<LE>(size)?;
 				self.file.write_all(entry.key().as_bytes())?;
 				self.file.write_all(&b"\0\0\0"[..padding])?;
 				self.file.write_u32::<LE>(!id)?;
@@ -251,7 +269,12 @@ impl DepLogMut {
 
 	/// Write a list of dependencies to the file, if it is different than
 	/// what's already in the file.
-	pub fn insert_deps(&mut self, target: RawString, mtime: u64, deps: Vec<RawString>) -> Result<(), Error> {
+	pub fn insert_deps(
+		&mut self,
+		target: RawString,
+		mtime: u64,
+		deps: Vec<RawString>,
+	) -> Result<(), Error> {
 		let target = self.insert_path(target)?;
 		let record = self.deps.records.get_index_mut(target as usize).unwrap().1;
 
@@ -281,7 +304,8 @@ impl DepLogMut {
 		}
 
 		if need_write {
-			self.file.write_u32::<LE>(0x8000_0000 | (dep_ids.len() as u32 * 4 + 12))?;
+			let size = dep_ids.len() as u32 * 4 + 12;
+			self.file.write_u32::<LE>(0x8000_0000 | size)?;
 			self.file.write_u32::<LE>(target)?;
 			self.file.write_u64::<LE>(mtime)?;
 			for &dep in &dep_ids {
@@ -296,7 +320,6 @@ impl DepLogMut {
 
 		Ok(())
 	}
-
 }
 
 impl std::ops::Deref for DepLogMut {
@@ -311,6 +334,7 @@ mod test {
 	use super::*;
 
 	#[test]
+	#[rustfmt::skip]
 	fn test() -> Result<(), Error> {
 		let file_name = "ninj-test-deps-file";
 		std::fs::remove_file(file_name).ok();

@@ -13,8 +13,8 @@
 //!
 //! - **`.ninja_log` files**
 //!
-//!   The [`buildlog`] module allows both reading from and writing to `.ninja_log` files,
-//!   which store how each target was built previously.
+//!   The [`buildlog`] module allows both reading from and writing to
+//!   `.ninja_log` files,   which store how each target was built previously.
 //!
 //! - **`.ninja_deps` files**
 //!
@@ -23,8 +23,8 @@
 //!
 //! - **`Makefile`-style dependency files**
 //!
-//!   The [`depfile`] module can read `Makefile`-style dependency files which are
-//!   written by some compilers, such as GCC and Clang.
+//!   The [`depfile`] module can read `Makefile`-style dependency files which
+//!   are written by some compilers, such as GCC and Clang.
 //!
 //! # Utilities
 //!
@@ -44,6 +44,6 @@
 pub mod buildlog;
 pub mod depfile;
 pub mod deplog;
-pub mod spec;
 pub mod mtime;
 pub mod queue;
+pub mod spec;

@@ -37,7 +37,8 @@ pub fn check_escapes(src: &RawStr) -> Result<(), InvalidEscape> {
 /// variables) are valid. Invalid ones are ignored.
 ///
 /// The parser uses `check_escapes` on all variable definitons it reads,
-/// so anything from the parser can be assumed to contain only valid escape sequences.
+/// so anything from the parser can be assumed to contain only valid escape
+/// sequences.
 pub fn expand_var<S: VarScope>(var_name: &str, scope: &S) -> Result<RawString, ExpansionError> {
 	let mut s = RawString::new();
 	expand_var_to(var_name, scope, &mut s, None)?;
@@ -53,7 +54,8 @@ pub fn expand_var<S: VarScope>(var_name: &str, scope: &S) -> Result<RawString, E
 /// Use `check_escapes` to validate the escape sequences.
 ///
 /// The parser uses `check_escapes` on all variable definitons it reads,
-/// so anything from the parser can be assumed to contain only valid escape sequences.
+/// so anything from the parser can be assumed to contain only valid escape
+/// sequences.
 pub fn expand_str<T: AsRef<RawStr>, S: VarScope>(
 	source: T,
 	scope: &S,
@@ -134,7 +136,15 @@ fn expand_var_to<S: VarScope>(
 		}
 		Some(FoundVar::Unexpanded(e)) => {
 			check_recursion(var_name, prot)?;
-			expand_str_to(e, scope, result, Some(&RecursionProtection { parent: prot, var_name }))?;
+			expand_str_to(
+				e,
+				scope,
+				result,
+				Some(&RecursionProtection {
+					parent: prot,
+					var_name,
+				}),
+			)?;
 		}
 		None => {}
 	})
@@ -166,7 +176,10 @@ fn expand_str_to<S: VarScope>(
 		} else if source.starts_with("\n") {
 			// Escaped newline: "$\n"
 			source = &source[1..]; // Skip the newline itself first.
-			let n = source.bytes().position(|b| b != b' ').unwrap_or(source.len());
+			let n = source
+				.bytes()
+				.position(|b| b != b' ')
+				.unwrap_or(source.len());
 			source = &source[n..]; // Then skip any the indentation.
 		} else if source.starts_with("$") {
 			// Escaped dollar sign: "$$"
@@ -213,6 +226,7 @@ fn check_recursion(
 }
 
 #[test]
+#[rustfmt::skip]
 pub fn expand_str_test() {
 	struct Scope;
 	impl VarScope for Scope {
@@ -227,11 +241,17 @@ pub fn expand_str_test() {
 				"r2" => Some(FoundVar::Unexpanded("$r3".as_ref())),
 				"r3" => Some(FoundVar::Unexpanded("$r1".as_ref())),
 				"in" => Some(FoundVar::Paths {
-					paths: Box::leak(Box::new([RawString::from("hello"), RawString::from("wor ld")])),
+					paths: Box::leak(Box::new([
+						RawString::from("hello"),
+						RawString::from("wor ld"),
+					])),
 					newlines: false,
 				}),
 				"in_newline" => Some(FoundVar::Paths {
-					paths: Box::leak(Box::new([RawString::from("he||o"), RawString::from("wo'r|d")])),
+					paths: Box::leak(Box::new([
+						RawString::from("he||o"),
+						RawString::from("wo'r|d"),
+					])),
 					newlines: true,
 				}),
 				_ => None,

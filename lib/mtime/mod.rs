@@ -28,7 +28,9 @@ pub struct StatCache<'a> {
 impl<'a> StatCache<'a> {
 	/// Create an empty StatCache.
 	pub fn new() -> Self {
-		StatCache { cache: BTreeMap::new() }
+		StatCache {
+			cache: BTreeMap::new(),
+		}
 	}
 
 	/// Looks up the `mtime` of a file, returns the cached value if it exists.

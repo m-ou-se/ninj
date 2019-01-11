@@ -15,7 +15,10 @@ pub fn is_identifier_char(c: u8) -> bool {
 }
 
 pub fn eat_identifier<'a>(src: &mut &'a RawStr) -> Option<&'a str> {
-	let ident_end = src.bytes().position(|c| !is_identifier_char(c)).unwrap_or(src.len());
+	let ident_end = src
+		.bytes()
+		.position(|c| !is_identifier_char(c))
+		.unwrap_or(src.len());
 	let (ident, rest) = src.split_at(ident_end);
 	*src = rest;
 	if ident.is_empty() {

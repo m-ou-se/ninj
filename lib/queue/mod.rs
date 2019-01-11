@@ -70,10 +70,7 @@ pub enum TaskStatus {
 	///
 	/// If it is not outdated, it does not need to run.
 	/// It might be marked as outdated later.
-	Needed {
-		phony: bool,
-		outdated: bool,
-	},
+	Needed { phony: bool, outdated: bool },
 	/// The task is running.
 	Running {
 		/// The time since when it has been running.
@@ -110,7 +107,8 @@ pub struct LockedAsyncBuildQueue<'a> {
 /// The information the [`BuildQueue`] needs for each task.
 ///
 /// [`BuildQueue::new`] requires [`dependencies`][Self::dependencies] to be
-/// <code>IntoIter&lt;Item = <a href="struct.DepInfo.html">DepInfo</a>&gt;</code>.
+/// <code>IntoIter&lt;Item =
+/// <a href="struct.DepInfo.html">DepInfo</a>&gt;</code>.
 #[derive(Debug, Clone, Copy)]
 pub struct TaskInfo<T> {
 	pub phony: bool,
@@ -128,26 +126,21 @@ pub struct DepInfo {
 impl BuildQueue {
 	/// Construct a new build dependency graph.
 	///
-	/// - The (potential) tasks are numbered 0 to `max_task_num`.
-	///   ([`Task`]s will be stored in a vector of this size.)
+	/// - The (potential) tasks are numbered 0 to `max_task_num`. ([`Task`]s
+	///   will be stored in a vector of this size.)
 	///
 	/// - `targets` are the tasks that need to be executed.
 	///
 	/// - `get_task` is used to get the information the queue needs of each
-	///   (relevant) task: Whether it is phony, on which tasks it depends
-	///   (and how), and if the target is outdated. It is called exactly once
-	///   for every task in the dependency tree of the targets.
-	pub fn new<T, F, D>(
-		max_task_num: usize,
-		targets: T,
-		mut get_task: F,
-	) -> BuildQueue
-		where
-			T: IntoIterator<Item = usize>,
-			F: FnMut(usize) -> TaskInfo<D>,
-			D: IntoIterator<Item = DepInfo>,
+	///   (relevant) task: Whether it is phony, on which tasks it depends (and
+	///   how), and if the target is outdated. It is called exactly once for
+	///   every task in the dependency tree of the targets.
+	pub fn new<T, F, D>(max_task_num: usize, targets: T, mut get_task: F) -> BuildQueue
+	where
+		T: IntoIterator<Item = usize>,
+		F: FnMut(usize) -> TaskInfo<D>,
+		D: IntoIterator<Item = DepInfo>,
 	{
-
 		let mut tasks = vec![
 			Task {
 				status: TaskStatus::NotNeeded,
@@ -292,7 +285,11 @@ impl BuildQueue {
 	/// Returns the amount of newly ready tasks.
 	///
 	/// Adds any now finished (phony and up-to-date) tasks to `newly_finished`.
-	fn update_next_tasks_for_finished_task(&mut self, task: usize, newly_finished: &mut Vec<usize>) -> usize {
+	fn update_next_tasks_for_finished_task(
+		&mut self,
+		task: usize,
+		newly_finished: &mut Vec<usize>,
+	) -> usize {
 		let was_outdated = match &self.tasks[task].status {
 			TaskStatus::NotRun => false,
 			TaskStatus::PhonyFinished => true,
@@ -300,7 +297,11 @@ impl BuildQueue {
 			_ => unreachable!("Task {} was not finished: {:?}", task, self.tasks[task]),
 		};
 		let mut newly_ready = 0;
-		for DepInfo { task: next, order_only } in replace(&mut self.tasks[task].next, Vec::new()) {
+		for DepInfo {
+			task: next,
+			order_only,
+		} in replace(&mut self.tasks[task].next, Vec::new())
+		{
 			let next_phony;
 			let next_outdated;
 			match &mut self.tasks[next].status {
@@ -311,7 +312,10 @@ impl BuildQueue {
 					next_phony = *phony;
 					next_outdated = *outdated;
 				}
-				_ => unreachable!("Task {} in `next' list was not `Needed': {:?}", next, self.tasks[next]),
+				_ => unreachable!(
+					"Task {} in `next' list was not `Needed': {:?}",
+					next, self.tasks[next]
+				),
 			}
 			self.tasks[next].n_deps_left -= 1;
 			if self.tasks[next].n_deps_left == 0 {

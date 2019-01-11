@@ -16,7 +16,8 @@ pub use self::read::read_from;
 
 use raw_string::RawString;
 
-/// The result of reading a `build.ninja` file, the specification of how to build what.
+/// The result of reading a `build.ninja` file, the specification of how to
+/// build what.
 #[derive(Debug)]
 pub struct Spec {
 	/// All the build rules.
@@ -89,7 +90,8 @@ pub struct BuildCommand {
 	pub rspfile_content: RawString,
 	/// The name of the pool in which the command should run.
 	pub pool: String,
-	/// The depth of the pool, i.e. the maximum number of concurrent jobs in the pool.
+	/// The depth of the pool, i.e. the maximum number of concurrent jobs in the
+	/// pool.
 	pub pool_depth: Option<u16>,
 }
 

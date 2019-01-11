@@ -49,7 +49,8 @@ impl<T: std::fmt::Display> std::fmt::Display for ErrorWithLocation<T> {
 impl<T: std::fmt::Display + std::fmt::Debug> std::error::Error for ErrorWithLocation<T> {}
 
 impl<A> ErrorWithLocation<A> {
-	/// Convert one error type to another, while keeping the location information.
+	/// Convert one error type to another, while keeping the location
+	/// information.
 	pub fn convert<B: From<A>>(self) -> ErrorWithLocation<B> {
 		ErrorWithLocation {
 			file: self.file,
@@ -116,7 +117,8 @@ impl From<InvalidEscape> for ParseError {
 	}
 }
 
-/// An error while expanding variables: Variable definitions make an infinite cycle.
+/// An error while expanding variables: Variable definitions make an infinite
+/// cycle.
 #[derive(Debug)]
 pub struct ExpansionError {
 	/// The 'stack trace' of the cycle, containing the variable names.
@@ -154,7 +156,8 @@ pub enum ReadError {
 	InvalidPoolDepth,
 	/// Missing the `depth =` variable in a pool definition.
 	ExpectedPoolDepth,
-	/// Got a definition of a variable which is not recognized in this (`pool` or `rule`) definition.
+	/// Got a definition of a variable which is not recognized in this (`pool`
+	/// or `rule`) definition.
 	UnknownVariable(String),
 	/// Variable expansion encountered a cycle.
 	ExpansionError(ExpansionError),
@@ -189,7 +192,9 @@ impl std::fmt::Display for ReadError {
 			ReadError::ExpectedPoolDepth => write!(f, "Missing `depth =' line"),
 			ReadError::UnknownVariable(n) => write!(f, "Unexpected variable: {}", n),
 			ReadError::ExpansionError(e) => write!(f, "{}", e),
-			ReadError::IoError { file_name, error } => write!(f, "Unable to read {:?}: {}", file_name, error),
+			ReadError::IoError { file_name, error } => {
+				write!(f, "Unable to read {:?}: {}", file_name, error)
+			}
 			ReadError::InvalidUtf8 { var } => {
 				write!(f, "Invalid UTF-8 encoding")?;
 				if let Some(var) = var {

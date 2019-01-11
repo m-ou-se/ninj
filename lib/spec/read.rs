@@ -2,7 +2,7 @@ use super::error::{ErrorWithLocation, ReadError};
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
 use super::parse::{Parser, Statement, Variable};
 use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, FileScope, Rule, VarScope};
-use super::{BuildRule, BuildCommand, DepStyle, Spec};
+use super::{BuildCommand, BuildRule, DepStyle, Spec};
 use pile::Pile;
 use raw_string::{RawStr, RawString};
 use std::borrow::ToOwned;
@@ -47,8 +47,19 @@ pub fn read_from(file_name: &Path, source: &[u8]) -> Result<Spec, ErrorWithLocat
 	let mut spec = Spec::new();
 	let mut scope = FileScope::new();
 	let mut pools = vec![("console".to_string(), 1)];
-	read_into(file_name, RawStr::from_bytes(source), &pile, &mut spec, &mut scope, &mut pools)?;
-	if let Some(var) = scope.vars.iter_mut().rfind(|var| var.name.as_bytes() == b"builddir") {
+	read_into(
+		file_name,
+		RawStr::from_bytes(source),
+		&pile,
+		&mut spec,
+		&mut scope,
+		&mut pools,
+	)?;
+	if let Some(var) = scope
+		.vars
+		.iter_mut()
+		.rfind(|var| var.name.as_bytes() == b"builddir")
+	{
 		spec.build_dir = Some(replace(&mut var.value, RawString::new()));
 	}
 	Ok(spec)
@@ -141,18 +152,20 @@ fn read_into<'a: 'p, 'p>(
 				let make_error = |e| loc.make_error(e);
 
 				// And expand the input and output paths with it.
-				let mut outputs = Vec::with_capacity(explicit_outputs.len() + implicit_outputs.len());
+				let mut outputs =
+					Vec::with_capacity(explicit_outputs.len() + implicit_outputs.len());
 				let mut inputs = Vec::with_capacity(explicit_deps.len() + implicit_deps.len());
-				expand_strs_into(&explicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
+				expand_strs_into(&explicit_outputs, &build_scope, &mut outputs)
+					.map_err(make_error)?;
 				expand_strs_into(&explicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
 
 				let command = if rule_name == "phony" {
 					None
 				} else {
 					// Look up the rule in the current scope.
-					let rule = scope
-						.lookup_rule(rule_name)
-						.ok_or_else(|| loc.make_error(ReadError::UndefinedRule(rule_name.to_string())))?;
+					let rule = scope.lookup_rule(rule_name).ok_or_else(|| {
+						loc.make_error(ReadError::UndefinedRule(rule_name.to_string()))
+					})?;
 
 					// Bring $in, $out, and the rule variables into scope.
 					let build_rule_scope = BuildRuleScope {
@@ -199,12 +212,17 @@ fn read_into<'a: 'p, 'p>(
 					})
 				};
 
-				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs).map_err(make_error)?;
+				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs)
+					.map_err(make_error)?;
 				expand_strs_into(&implicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
 
 				let mut order_deps = expand_strs(&order_deps, &build_scope).map_err(make_error)?;
 
-				for path in outputs.iter_mut().chain(inputs.iter_mut()).chain(order_deps.iter_mut()) {
+				for path in outputs
+					.iter_mut()
+					.chain(inputs.iter_mut())
+					.chain(order_deps.iter_mut())
+				{
 					super::canonicalizepath::canonicalize_path_in_place(path);
 				}
 
@@ -218,14 +236,22 @@ fn read_into<'a: 'p, 'p>(
 			Statement::Default { paths } => {
 				spec.default_targets.reserve(paths.len());
 				for p in paths {
-					spec.default_targets.push(loc.map_error(expand_str(p, scope))?);
+					spec.default_targets
+						.push(loc.map_error(expand_str(p, scope))?);
 				}
 			}
 			Statement::Include { path } => {
 				let path = loc.map_error(expand_str(path, scope))?;
 				let path = loc.map_error(path.to_path())?;
 				let source = RawStr::from_bytes(pile.add(loc.map_error(read_bytes(&path))?));
-				read_into(&file_name.with_file_name(path), source, pile, spec, scope, pools)?;
+				read_into(
+					&file_name.with_file_name(path),
+					source,
+					pile,
+					spec,
+					scope,
+					pools,
+				)?;
 			}
 			Statement::SubNinja { path } => {
 				let path = loc.map_error(expand_str(path, scope))?;
