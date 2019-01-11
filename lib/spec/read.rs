@@ -234,15 +234,13 @@ fn read_into<'a: 'p, 'p>(
 				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
 				let path = loc.map_error(path.to_path())?;
-				let subpile = Pile::new();
 				let source = loc.map_error(read_bytes(&path))?;
-				let mut subscope = scope.new_subscope();
 				read_into(
 					&file_name.with_file_name(path),
 					RawStr::from_bytes(&source),
-					&subpile,
+					&Pile::new(),
 					spec,
-					&mut subscope,
+					&mut scope.new_subscope(),
 					pools,
 				)?;
 			}
