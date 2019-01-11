@@ -231,6 +231,11 @@ impl BuildQueue {
 	/// Returns the index of the task. Will never return a phony tasks, as
 	/// those don't have any work to do.
 	pub fn next(&mut self) -> Option<usize> {
+		self.next_at(Instant::now())
+	}
+
+	/// Like next(), returns the next thing to do, but notes it as having started at the given time instead of now.
+	pub fn next_at(&mut self, start_time: Instant) -> Option<usize> {
 		let next = self.ready.pop();
 		if let Some(next) = next {
 			assert_eq!(self.tasks[next].n_deps_left, 0);
@@ -241,9 +246,7 @@ impl BuildQueue {
 					outdated: true
 				}
 			);
-			self.tasks[next].status = TaskStatus::Running {
-				start_time: Instant::now(),
-			};
+			self.tasks[next].status = TaskStatus::Running {start_time};
 			self.n_left -= 1;
 		}
 		next
@@ -262,9 +265,19 @@ impl BuildQueue {
 		task: usize,
 		restat: Option<&mut dyn FnMut(usize) -> bool>,
 	) -> usize {
+		self.complete_task_at(task, restat, Instant::now())
+	}
+
+	/// Like complete_task, marks a task as completed, but notes it as having finished at the given time instead of now.
+	pub fn complete_task_at(
+		&mut self,
+		task: usize,
+		restat: Option<&mut dyn FnMut(usize) -> bool>,
+		finish_time: Instant,
+	) -> usize {
 		self.tasks[task].status = match &self.tasks[task].status {
 			TaskStatus::Running { start_time } => TaskStatus::Finished {
-				running_time: start_time.elapsed(),
+				running_time: finish_time - *start_time,
 			},
 			_ => panic!(
 				"complete_task({}) on task that isn't Running: {:?}",

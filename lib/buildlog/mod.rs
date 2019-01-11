@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::path::Path;
+use std::time::Duration;
 
 mod murmurhash;
 
@@ -31,6 +32,28 @@ impl BuildLog {
 	pub fn new() -> BuildLog {
 		BuildLog {
 			entries: BTreeMap::new(),
+		}
+	}
+
+	pub fn estimated_total_task_time(&self, output: RawString, _command: RawString) -> Option<Duration> {
+		match self.entries.get(&output) {
+			Some(entry) => Some(Duration::from_millis((entry.end_time_ms - entry.start_time_ms).into())),
+			None => {
+				// TODO: Search entries for command_hash equal to murmur_hash_64a(_command)
+				None
+			},
+		}
+	}
+
+	pub fn average_historic_task_time(&self) -> Option<Duration> {
+		if self.entries.is_empty() {
+			None
+		} else {
+			let mut sum_ms = 0 as u64;
+			for (_output, entry) in self.entries.iter() {
+				sum_ms += (entry.end_time_ms - entry.start_time_ms) as u64;
+			}
+			Some(Duration::from_millis(sum_ms / self.entries.len() as u64))
 		}
 	}
 

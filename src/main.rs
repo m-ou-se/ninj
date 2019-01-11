@@ -8,6 +8,7 @@ use self::logger::Logger;
 use self::status::{show_build_status, BuildStatus};
 use self::worker::Worker;
 use log::{debug, error};
+use ninj::buildlog::BuildLog;
 use ninj::deplog::DepLogMut;
 use ninj::mtime::StatCache;
 use ninj::outdated::is_outdated;
@@ -100,6 +101,12 @@ fn main() {
 
 	let target_to_rule = spec.make_index();
 
+	let build_log = BuildLog::read(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
+		error!("Error while reading .ninja_log: {}", e);
+		error!("Not using .ninja_log.");
+		BuildLog::new()
+	});
+
 	let dep_log = DepLogMut::open(spec.build_dir().join(".ninja_deps")).unwrap_or_else(|e| {
 		error!("Error while reading .ninja_deps: {}", e);
 		// TODO: Delete and start a new file.
@@ -181,7 +188,7 @@ fn main() {
 		if opt.debug {
 			debug!("Regular output disabled because debug messages are enabled.");
 		} else {
-			show_build_status(start_time, &status, &queue, &spec, opt.sleep_run);
+			show_build_status(start_time, &status, &queue, &spec, &build_log, opt.sleep_run);
 		}
 	})
 	.unwrap();
