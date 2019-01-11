@@ -3,7 +3,7 @@
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufReader, Error, ErrorKind, BufRead};
+use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::path::Path;
 
 mod murmurhash;
@@ -28,7 +28,9 @@ pub struct Entry {
 impl BuildLog {
 	/// Create an empty build log.
 	pub fn new() -> BuildLog {
-		BuildLog { entries: BTreeMap::new() }
+		BuildLog {
+			entries: BTreeMap::new(),
+		}
 	}
 
 	/// Read a build log from a file.
