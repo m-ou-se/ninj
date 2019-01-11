@@ -2,6 +2,7 @@ language: rust
 matrix:
   include:
     - rust: stable
+    - rust: nightly
   fast_finish: true
 script:
   - cargo build --verbose
