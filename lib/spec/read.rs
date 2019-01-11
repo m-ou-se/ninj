@@ -65,14 +65,15 @@ fn read_into<'a: 'p, 'p>(
 	let mut parser = Parser::new(file_name, source);
 
 	while let Some(statement) = parser.next_statement()? {
+		let loc = parser.location();
 		match statement {
 			Statement::Variable { name, value } => {
-				let value = parser.location().map_error(expand_str(value, scope))?;
+				let value = loc.map_error(expand_str(value, scope))?;
 				scope.vars.push(ExpandedVar { name, value })
 			}
 			Statement::Rule { name } => {
 				if scope.rules.iter().any(|rule| rule.name == name) {
-					return Err(parser.location().make_error(ReadError::DuplicateRule(name.to_string())));
+					return Err(loc.make_error(ReadError::DuplicateRule(name.to_string())));
 				}
 				let mut vars = Vec::new();
 				while let Some(var) = parser.next_variable()? {
@@ -91,7 +92,7 @@ fn read_into<'a: 'p, 'p>(
 			}
 			Statement::Pool { name } => {
 				if pools.iter().any(|(n, _)| n == name) {
-					return Err(parser.location().make_error(ReadError::DuplicatePool(name.to_string())));
+					return Err(loc.make_error(ReadError::DuplicatePool(name.to_string())));
 				}
 				let mut depth = None;
 				while let Some(Variable { name, value }) = parser.next_variable()? {
@@ -123,8 +124,6 @@ fn read_into<'a: 'p, 'p>(
 				implicit_deps,
 				order_deps,
 			} => {
-				let location = parser.location();
-
 				let mut vars = Vec::new();
 				while let Some(Variable { name, value }) = parser.next_variable()? {
 					vars.push(ExpandedVar {
@@ -139,7 +138,7 @@ fn read_into<'a: 'p, 'p>(
 					build_vars: &vars,
 				};
 
-				let make_error = |e| location.make_error(e);
+				let make_error = |e| loc.make_error(e);
 
 				// And expand the input and output paths with it.
 				let mut outputs = Vec::with_capacity(explicit_outputs.len() + implicit_outputs.len());
@@ -153,7 +152,7 @@ fn read_into<'a: 'p, 'p>(
 					// Look up the rule in the current scope.
 					let rule = scope
 						.lookup_rule(rule_name)
-						.ok_or_else(|| location.make_error(ReadError::UndefinedRule(rule_name.to_string())))?;
+						.ok_or_else(|| loc.make_error(ReadError::UndefinedRule(rule_name.to_string())))?;
 
 					// Bring $in, $out, and the rule variables into scope.
 					let build_rule_scope = BuildRuleScope {
@@ -175,7 +174,7 @@ fn read_into<'a: 'p, 'p>(
 						let (n, d) = pools
 							.iter()
 							.find(|(name, _)| name.as_bytes() == pool.as_bytes())
-							.ok_or_else(|| location.make_error(ReadError::UndefinedPool(pool)))?;
+							.ok_or_else(|| loc.make_error(ReadError::UndefinedPool(pool)))?;
 						(n.clone(), Some(*d))
 					};
 
@@ -217,21 +216,18 @@ fn read_into<'a: 'p, 'p>(
 				});
 			}
 			Statement::Default { paths } => {
-				let loc = parser.location();
 				spec.default_targets.reserve(paths.len());
 				for p in paths {
 					spec.default_targets.push(loc.map_error(expand_str(p, scope))?);
 				}
 			}
 			Statement::Include { path } => {
-				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
 				let path = loc.map_error(path.to_path())?;
 				let source = RawStr::from_bytes(pile.add(loc.map_error(read_bytes(&path))?));
 				read_into(&file_name.with_file_name(path), source, pile, spec, scope, pools)?;
 			}
 			Statement::SubNinja { path } => {
-				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
 				let path = loc.map_error(path.to_path())?;
 				let source = loc.map_error(read_bytes(&path))?;
