@@ -173,6 +173,12 @@ fn main() {
 					if output_time.map_or(true, |m| m > mtime) {
 						output_time = Some(mtime);
 					}
+					if rule.command.as_ref().map_or(true, |c| !c.deps.is_some()) {
+						// Don't even look up dependencies in de dependency log
+						// for targets that don't use extra dependencies
+						// anyway.
+						continue;
+					}
 					if let Some(deps) = dep_log.get(&output) {
 						if UNIX_EPOCH + Duration::from_nanos(deps.mtime()) < mtime {
 							// Our dependency information is outdated, so treat the target as outdated.
@@ -189,6 +195,11 @@ fn main() {
 								break;
 							}
 						}
+					} else {
+						// Our dependency information is non-existent, so treat the target as outdated.
+						output_time = None;
+						outdated = true;
+						break;
 					}
 				} else {
 					// This output doesn't even exist, so the task is definitely out of date.
