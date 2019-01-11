@@ -117,6 +117,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 				}
 				None => {
 					// No newline at the end of the line.
+					line_end = self.source.len();
 					newline = 0;
 					break;
 				}
