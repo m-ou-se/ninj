@@ -12,7 +12,7 @@ use std::mem::replace;
 use std::path::Path;
 use std::str::from_utf8;
 
-fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawStr, ReadError> {
+fn read_bytes<'a>(file_name: &Path) -> Result<Vec<u8>, ReadError> {
 	let mut bytes = Vec::new();
 	File::open(file_name)
 		.and_then(|f| BufReader::with_capacity(0x10000, f).read_to_end(&mut bytes))
@@ -20,7 +20,7 @@ fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawSt
 			file_name: file_name.to_owned(),
 			error,
 		})?;
-	Ok(RawStr::from_bytes(pile.add(bytes)))
+	Ok(bytes)
 }
 
 /// Read, parse, and resolve rules and variables in a `ninja.build` file.
@@ -28,16 +28,26 @@ fn read_bytes<'a>(file_name: &Path, pile: &'a Pile<Vec<u8>>) -> Result<&'a RawSt
 /// Parses the file, including any included and subninja'd files, and resolves
 /// all rules and variables, resulting in a `Spec`.
 pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
-	let pile = Pile::new();
-	let source = read_bytes(file_name, &pile).map_err(|error| ErrorWithLocation {
+	let source = read_bytes(file_name).map_err(|error| ErrorWithLocation {
 		file: String::new(),
 		line: 0,
 		error,
 	})?;
+	read_from(file_name, &source)
+}
+
+/// [`read()`], but with the source given directly instead of read from a file.
+///
+/// Useful for testing and fuzzing.
+///
+/// `file_name` is used in errors, and to know where to look for `include` and
+/// `subninja` files.
+pub fn read_from(file_name: &Path, source: &[u8]) -> Result<Spec, ErrorWithLocation<ReadError>> {
+	let pile = Pile::new();
 	let mut spec = Spec::new();
 	let mut scope = FileScope::new();
 	let mut pools = vec![("console".to_string(), 1)];
-	read_into(file_name, &source, &pile, &mut spec, &mut scope, &mut pools)?;
+	read_into(file_name, RawStr::from_bytes(source), &pile, &mut spec, &mut scope, &mut pools)?;
 	if let Some(var) = scope.vars.iter_mut().rfind(|var| var.name.as_bytes() == b"builddir") {
 		spec.build_dir = Some(replace(&mut var.value, RawString::new()));
 	}
@@ -217,19 +227,19 @@ fn read_into<'a: 'p, 'p>(
 				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
 				let path = loc.map_error(path.to_pathbuf())?;
-				let source = loc.map_error(read_bytes(&path, &pile))?;
-				read_into(&file_name.with_file_name(path), &source, &pile, spec, scope, pools)?;
+				let source = RawStr::from_bytes(pile.add(loc.map_error(read_bytes(&path))?));
+				read_into(&file_name.with_file_name(path), source, pile, spec, scope, pools)?;
 			}
 			Statement::SubNinja { path } => {
 				let loc = parser.location();
 				let path = loc.map_error(expand_str(path, scope))?;
 				let path = loc.map_error(path.to_pathbuf())?;
 				let subpile = Pile::new();
-				let source = loc.map_error(read_bytes(&path, &subpile))?;
+				let source = loc.map_error(read_bytes(&path))?;
 				let mut subscope = scope.new_subscope();
 				read_into(
 					&file_name.with_file_name(path),
-					&source,
+					RawStr::from_bytes(&source),
 					&subpile,
 					spec,
 					&mut subscope,

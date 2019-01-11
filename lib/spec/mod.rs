@@ -12,6 +12,7 @@ pub mod parse;
 pub mod scope;
 
 pub use self::read::read;
+pub use self::read::read_from;
 
 use raw_string::RawString;
 
