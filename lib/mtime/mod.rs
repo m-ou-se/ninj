@@ -94,4 +94,15 @@ impl<'a> StatCache<'a> {
 		self.cache.insert(file, mtime);
 		Ok(mtime)
 	}
+
+	/// Looks up the `mtime` of a file in the cache.
+	///
+	/// *Only* checks the cache. Will not check the file system.
+	///
+	/// If the cache does not contain an entry for this file, returns `None`.
+	///
+	/// If the file does not exist according to the cache, returns `Some(None)`.
+	pub fn cached_mtime(&mut self, file: &Path) -> Option<Option<Timestamp>> {
+		self.cache.get(file).cloned()
+	}
 }
