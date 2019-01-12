@@ -1,7 +1,10 @@
-use ninj::spec::Spec;
+use super::Options;
+use ninj::spec::read;
+use std::io::Error;
 
-pub fn generate_graph(spec: &Spec) {
-	println!("digraph G {{");
+pub(super) fn main(opt: &Options) -> Result<(), Error> {
+	let spec = read(&opt.file)?;
+	println!("digraph BuildGraph {{");
 	println!("rankdir = \"LR\";");
 	println!("node [fontsize=10, shape=box, height=0.25]");
 	println!("edge [fontsize=10]");
@@ -19,4 +22,5 @@ pub fn generate_graph(spec: &Spec) {
 		}
 	}
 	println!("}}");
+	Ok(())
 }

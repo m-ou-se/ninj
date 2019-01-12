@@ -1,23 +1,20 @@
-mod graph;
 mod logger;
 mod status;
+mod subtools;
 mod timeformat;
 mod worker;
 
-use self::graph::generate_graph;
 use self::logger::Logger;
 use self::status::{show_build_status, BuildStatus};
 use self::worker::Worker;
 use log::{debug, error};
-use ninj::buildlog::BuildLog;
 use ninj::deplog::DepLogMut;
-use ninj::mtime::{StatCache, Timestamp};
+use ninj::mtime::StatCache;
 use ninj::outdated::is_outdated;
 use ninj::queue::{BuildQueue, DepInfo, TaskInfo};
 use ninj::spec::read;
-use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -82,6 +79,14 @@ fn main() {
 		debug!("Debug messages enabled.");
 	}
 
+	if let Some(tool) = opt.tool.as_ref() {
+		subtools::run_subtool(tool, &opt).unwrap_or_else(|e| {
+			error!("{}", e);
+			exit(1);
+		});
+		exit(0);
+	}
+
 	let spec = read(&opt.file).unwrap_or_else(|e| {
 		error!("{}", e);
 		exit(1);
@@ -95,72 +100,11 @@ fn main() {
 
 	let target_to_rule = spec.make_index();
 
-	let build_log = BuildLog::read(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
-		error!("Error while reading .ninja_log: {}", e);
-		error!("Not using .ninja_log.");
-		BuildLog::new()
-	});
-
 	let dep_log = DepLogMut::open(spec.build_dir().join(".ninja_deps")).unwrap_or_else(|e| {
 		error!("Error while reading .ninja_deps: {}", e);
 		// TODO: Delete and start a new file.
 		exit(1);
 	});
-
-	if let Some(tool) = opt.tool {
-		match &tool[..] {
-			"graph" => generate_graph(&spec),
-			"log" => println!("{:#?}", build_log),
-			"deps" => {
-				for (path, deps) in dep_log.iter() {
-					if target_to_rule.contains_key(&path[..]) {
-						let mtime = || {
-							std::fs::metadata(path.as_path())
-								.and_then(|m| m.modified())
-								.ok()
-								.map(Timestamp::from_system_time)
-						};
-						let nanos = deps.mtime().map_or(0, Timestamp::to_nanos);
-						println!(
-							"{}: #deps {}, deps mtime {}.{:09} ({})",
-							path,
-							deps.deps().len(),
-							nanos / 1_000_000_000,
-							nanos % 1_000_000_000,
-							if deps.mtime().map_or(true, |t| Some(t) < mtime()) {
-								"STALE"
-							} else {
-								"VALID"
-							}
-						);
-						for dep in deps.deps() {
-							println!("    {}", dep);
-						}
-						println!();
-					}
-				}
-			}
-			"targets" => {
-				for target in &spec.build_rules {
-					for output in &target.outputs {
-						println!(
-							"{}: {}",
-							output,
-							target.command.as_ref().map_or("phony", |c| &c.rule_name)
-						);
-					}
-				}
-			}
-			"list" => {
-				println!("Subtools:\n\tdeps\n\tgraph\n\tlog\n\ttargets");
-			}
-			x => {
-				error!("Unknown subtool {:?}.", x);
-				exit(1);
-			}
-		}
-		exit(0);
-	}
 
 	let targets = targets.into_iter().map(|target| {
 		*target_to_rule.get(&target[..]).unwrap_or_else(|| {
