@@ -7,7 +7,7 @@ mod worker;
 use self::logger::Logger;
 use self::graph::generate_graph;
 use self::status::{BuildStatus, show_build_status};
-use self::worker::worker;
+use self::worker::Worker;
 use ninj::outdated::is_outdated;
 use ninj::queue::{BuildQueue, DepInfo, TaskInfo};
 use ninj::mtime::{Timestamp, StatCache};
@@ -232,14 +232,15 @@ fn main() {
 
 	crossbeam::thread::scope(|scope| {
 		for i in 0..n_threads {
-			let queue = &queue;
-			let spec = &spec;
-			let status = &status;
-			let sleep = opt.sleep_run;
-			let dep_log = &dep_log;
-			scope.spawn(move |_| {
-				worker(i, queue, spec, status, sleep, dep_log).unwrap();
-			});
+			let worker = Worker {
+				id: i,
+				queue: &queue,
+				spec: &spec,
+				status: &status,
+				sleep: opt.sleep_run,
+				dep_log: &dep_log,
+			};
+			scope.spawn(move |_| worker.run().unwrap());
 		}
 		if opt.debug {
 			debug!("Regular output disabled because debug messages are enabled.");
