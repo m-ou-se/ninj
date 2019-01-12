@@ -1,4 +1,3 @@
-use crate::status::{BuildStatus, WorkerStatus};
 use log::{debug, error};
 use ninj::depfile::read_deps_file;
 use ninj::deplog::DepLogMut;
@@ -10,22 +9,45 @@ use std::io::Error;
 use std::process::exit;
 use std::sync::Mutex;
 
+/// A worker that executes tasks of a [`Spec`] according to a [`BuildQueue`].
 pub struct Worker<'a> {
 	pub id: usize,
-	pub queue: &'a AsyncBuildQueue,
 	pub spec: &'a Spec,
-	pub status: &'a BuildStatus,
+	pub queue: &'a AsyncBuildQueue,
+	pub status_updater: &'a (dyn StatusUpdater + Sync),
 	pub sleep: bool,
 	pub dep_log: &'a Mutex<DepLogMut>,
 }
 
+/// Something that a [`Worker`] can report its status to.
+pub trait StatusUpdater {
+	fn idle(&self, worker: usize);
+	fn running(&self, worker: usize, task: usize);
+	fn done(&self, worker: usize);
+	fn failed(&self, worker: usize);
+}
+
 impl<'a> Worker<'a> {
 	pub fn run(self) -> Result<(), Error> {
+		// This function wraps _run, to make sure we always call done() or
+		// failed() on the StatusUpdater.
+		let id = self.id;
+		let s = self.status_updater;
+		let result = self.run_();
+		if result.is_err() {
+			s.failed(id);
+		} else {
+			s.done(id);
+		}
+		result
+	}
+
+	pub fn run_(self) -> Result<(), Error> {
 		let Worker {
 			id,
 			queue,
 			spec,
-			status,
+			status_updater,
 			sleep,
 			dep_log,
 		} = self;
@@ -35,7 +57,7 @@ impl<'a> Worker<'a> {
 			let mut next = lock.next();
 			drop(lock);
 			if next.is_none() {
-				status.set_status(id, WorkerStatus::Idle);
+				status_updater.idle(id);
 				next = queue.lock().wait();
 			}
 			let task = if let Some(task) = next {
@@ -44,7 +66,7 @@ impl<'a> Worker<'a> {
 				// There are no remaining jobs
 				break;
 			};
-			status.set_status(id, WorkerStatus::Running { task });
+			status_updater.running(id, task);
 			let restat;
 			let mut restat_fn;
 			if sleep {
@@ -118,7 +140,6 @@ impl<'a> Worker<'a> {
 			lock = queue.lock();
 			lock.complete_task(task, restat);
 		}
-		status.set_status(id, WorkerStatus::Done);
 		Ok(())
 	}
 }

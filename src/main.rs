@@ -244,7 +244,7 @@ fn main() {
 				id: i,
 				queue: &queue,
 				spec: &spec,
-				status: &status,
+				status_updater: &status,
 				sleep: opt.sleep_run,
 				dep_log: &dep_log,
 			};

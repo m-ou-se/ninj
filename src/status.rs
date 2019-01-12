@@ -1,25 +1,26 @@
 use crate::timeformat::MinSec;
+use crate::worker::StatusUpdater;
 use ninj::queue::{AsyncBuildQueue, TaskStatus};
 use ninj::spec::Spec;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum WorkerStatus {
+enum WorkerStatus {
 	Starting,
 	Idle,
 	Running { task: usize },
 	Done,
 }
 
-pub struct BuildStatusInner {
-	pub workers: Vec<WorkerStatus>,
-	pub dirty: bool,
+struct BuildStatusInner {
+	workers: Vec<WorkerStatus>,
+	dirty: bool,
 }
 
 pub struct BuildStatus {
-	pub inner: Mutex<BuildStatusInner>,
-	pub condvar: Condvar,
+	inner: Mutex<BuildStatusInner>,
+	condvar: Condvar,
 }
 
 impl BuildStatus {
@@ -33,11 +34,26 @@ impl BuildStatus {
 		}
 	}
 
-	pub fn set_status(&self, worker: usize, status: WorkerStatus) {
+	fn set_status(&self, worker: usize, status: WorkerStatus) {
 		let mut lock = self.inner.lock().unwrap();
 		lock.workers[worker] = status;
 		lock.dirty = true;
 		self.condvar.notify_all();
+	}
+}
+
+impl StatusUpdater for BuildStatus {
+	fn idle(&self, worker: usize) {
+		self.set_status(worker, WorkerStatus::Idle);
+	}
+	fn running(&self, worker: usize, task: usize) {
+		self.set_status(worker, WorkerStatus::Running { task });
+	}
+	fn done(&self, worker: usize) {
+		self.set_status(worker, WorkerStatus::Done);
+	}
+	fn failed(&self, worker: usize) {
+		self.set_status(worker, WorkerStatus::Done);
 	}
 }
 
