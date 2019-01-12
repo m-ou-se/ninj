@@ -256,3 +256,9 @@ impl From<ErrorWithLocation<std::str::Utf8Error>> for ErrorWithLocation<ReadErro
 		src.convert()
 	}
 }
+
+impl<T: std::fmt::Display> From<ErrorWithLocation<T>> for std::io::Error {
+	fn from(src: ErrorWithLocation<T>) -> std::io::Error {
+		std::io::Error::new(std::io::ErrorKind::Other, format!("{}", src))
+	}
+}
