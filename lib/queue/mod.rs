@@ -266,7 +266,7 @@ impl BuildQueue {
 				was_outdated,
 			},
 			_ => panic!(
-				"complete_task({}) on task that isn't Running or PhonyQueued: {:?}",
+				"complete_task({}) on task that isn't Running: {:?}",
 				task, self.tasks[task]
 			),
 		};
