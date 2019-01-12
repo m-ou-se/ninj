@@ -15,6 +15,7 @@ use crate::spec::BuildRule;
 use raw_string::unix::RawStrExt;
 use raw_string::RawStr;
 use std::io::{Error, ErrorKind};
+use log::debug;
 
 /// Check if a target is outdated.
 ///
@@ -81,7 +82,7 @@ pub fn check_outputs<'a, 'b>(
 			}
 			if let Some(deps) = dep_log.get(&output) {
 				if deps.mtime() < Some(mtime) {
-					// Our dependency information is outdated.
+					debug!("{:?} is outdated because our dependency log is stale.", output);
 					return Ok(None);
 				}
 				for dep in deps.deps() {
@@ -91,20 +92,20 @@ pub fn check_outputs<'a, 'b>(
 					};
 					if let Some(dep_mtime) = dep_mtime {
 						if mtime < dep_mtime {
-							// This recorded dependency is newer than the output.
+							debug!("{:?} is outdated because {:?} is newer.", output, dep);
 							return Ok(None);
 						}
 					} else {
-						// This recorded dependency no longer exists.
+						debug!("{:?} is outdated because {:?} no longer exists.", output, dep);
 						return Ok(None);
 					}
 				}
 			} else {
-				// Our dependency information is non-existent.
+				debug!("{:?} is outdated because we don't know its dependencies.", output);
 				return Ok(None);
 			}
 		} else {
-			// This output doesn't even exist.
+			debug!("{:?} is outdated because it doesn't exist.", output);
 			return Ok(None);
 		}
 	}
@@ -143,8 +144,12 @@ pub fn check_dependencies<'a>(
 	for (path, is_order_only) in iter_inputs.chain(iter_order_deps) {
 		let has_rule = check_dep(path, is_order_only);
 		let mtime = stat_cache.mtime(path.as_path())?;
-		if mtime.is_none() || (!is_order_only && mtime > oldest_output) {
+		if mtime.is_none() {
 			outdated = true;
+			debug!("{:?} is outdated because {:?} does not exist.", rule.outputs, path);
+		} else if !is_order_only && mtime > oldest_output {
+			outdated = true;
+			debug!("{:?} is outdated because {:?} is newer.", rule.outputs, path);
 		}
 		if !has_rule && mtime.is_none() {
 			return Err(Error::new(

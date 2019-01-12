@@ -1,6 +1,8 @@
 mod graph;
+mod logger;
 mod timeformat;
 
+use self::logger::Logger;
 use self::graph::generate_graph;
 use ninj::outdated::is_outdated;
 use ninj::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
@@ -18,6 +20,7 @@ use std::process::exit;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
+use log::{error, debug};
 
 #[derive(StructOpt)]
 struct Options {
@@ -53,20 +56,32 @@ struct Options {
 	/// Number of concurrent jobs.
 	#[structopt(short = "j", default_value = "8")]
 	n_threads: usize,
+
+	/// Enable debug messages.
+	#[structopt(long)]
+	debug: bool,
 }
 
 fn main() {
+	log::set_logger(&Logger).unwrap();
+	log::set_max_level(log::LevelFilter::Warn);
+
 	let opt = Options::from_args();
 
 	if let Some(dir) = opt.directory.as_ref() {
 		std::env::set_current_dir(dir).unwrap_or_else(|e| {
-			eprintln!("Unable to change directory to {:?}: {}", dir, e);
+			error!("Unable to change directory to {:?}: {}", dir, e);
 			exit(1);
 		});
 	}
 
+	if opt.debug {
+		log::set_max_level(log::LevelFilter::Debug);
+		debug!("Debug messages enabled.");
+	}
+
 	let spec = read(&opt.file).unwrap_or_else(|e| {
-		eprintln!("{}", e);
+		error!("{}", e);
 		exit(1);
 	});
 
@@ -80,7 +95,7 @@ fn main() {
 	for (rule_i, rule) in spec.build_rules.iter().enumerate() {
 		for output in &rule.outputs {
 			if target_to_rule.insert(&output, rule_i).is_some() {
-				eprintln!(
+				error!(
 					"Warning, multiple rules generating {:?}. Ignoring all but last one.",
 					output
 				);
@@ -91,13 +106,13 @@ fn main() {
 	let build_dir = spec.build_dir.as_ref().map_or(Path::new(""), |p| p.as_path());
 
 	let build_log = BuildLog::read(build_dir.join(".ninja_log")).unwrap_or_else(|e| {
-		eprintln!("Error while reading .ninja_log: {}", e);
-		eprintln!("Not using .ninja_log.");
+		error!("Error while reading .ninja_log: {}", e);
+		error!("Not using .ninja_log.");
 		BuildLog::new()
 	});
 
 	let dep_log = DepLogMut::open(build_dir.join(".ninja_deps")).unwrap_or_else(|e| {
-		eprintln!("Error while reading .ninja_deps: {}", e);
+		error!("Error while reading .ninja_deps: {}", e);
 		// TODO: Delete and start a new file.
 		exit(1);
 	});
@@ -146,7 +161,7 @@ fn main() {
 				println!("Subtools:\n\tdeps\n\tgraph\n\tlog\n\ttargets");
 			}
 			x => {
-				eprintln!("Unknown subtool {:?}.", x);
+				error!("Unknown subtool {:?}.", x);
 				exit(1);
 			}
 		}
@@ -155,7 +170,7 @@ fn main() {
 
 	let targets = targets.into_iter().map(|target| {
 		*target_to_rule.get(&target[..]).unwrap_or_else(|| {
-			eprintln!("Unknown target {:?}", target);
+			error!("Unknown target {:?}", target);
 			exit(1);
 		})
 	});
@@ -259,6 +274,7 @@ fn main() {
 			let opt = &opt;
 			let dep_log = &dep_log;
 			scope.spawn(move |_| {
+				let log = format!("ninj::worker-{}", i);
 				let mut lock = queue.lock();
 				loop {
 					let mut next = lock.next();
@@ -278,22 +294,23 @@ fn main() {
 						std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
 					} else {
 						let rule = &spec.build_rules[task].command.as_ref().expect("Got phony task.");
+						debug!(target: &log, "Running: {:?}", rule.command);
 						let status = std::process::Command::new("sh")
 							.arg("-c")
 							.arg(rule.command.as_osstr())
 							.status()
 							.unwrap_or_else(|e| {
-								eprintln!("Unable to spawn sh process: {}", e);
+								error!("Unable to spawn sh process: {}", e);
 								exit(1);
 							});
 						match status.code() {
 							Some(0) => {}
 							Some(x) => {
-								eprintln!("Exited with status code {}: {}", x, rule.command);
+								error!("Exited with status code {}: {}", x, rule.command);
 								exit(1);
 							}
 							None => {
-								eprintln!("Exited with signal: {}", rule.command);
+								error!("Exited with signal: {}", rule.command);
 								exit(1);
 							}
 						}
@@ -302,12 +319,12 @@ fn main() {
 								// TODO: Don't use now().
 								let mtime = Timestamp::from_system_time(std::time::SystemTime::now());
 								dep_log.lock().unwrap().insert_deps(target, Some(mtime), deps).unwrap_or_else(|e| {
-									eprintln!("Unable to update dependency log: {}", e);
+									error!("Unable to update dependency log: {}", e);
 									exit(1);
 								});
 								Ok(())
 							}).unwrap_or_else(|e| {
-								eprintln!("Unable to read dependency file {:?}: {}", rule.depfile, e);
+								error!("Unable to read dependency file {:?}: {}", rule.depfile, e);
 								exit(1);
 							});
 						}
@@ -317,6 +334,10 @@ fn main() {
 				}
 				status.set_status(i, WorkerStatus::Done);
 			});
+		}
+		if opt.debug {
+			debug!("Regular output disabled because debug messages are enabled.");
+			return;
 		}
 		println!("{}:", if opt.sleep_run { "Sleeping" } else { "Building" });
 		loop {
