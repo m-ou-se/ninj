@@ -143,7 +143,7 @@ pub fn check_dependencies<'a>(
 	for (path, is_order_only) in iter_inputs.chain(iter_order_deps) {
 		let has_rule = check_dep(path, is_order_only);
 		let mtime = stat_cache.mtime(path.as_path())?;
-		if mtime.is_none() || (!is_order_only && mtime < oldest_output) {
+		if mtime.is_none() || (!is_order_only && mtime > oldest_output) {
 			outdated = true;
 		}
 		if !has_rule && mtime.is_none() {
