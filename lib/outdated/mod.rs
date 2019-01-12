@@ -26,13 +26,19 @@ use std::io::{Error, ErrorKind};
 /// returned.
 ///
 /// Simply calls [`check_outputs`] followed by [`check_dependencies`].
-pub fn is_outdated<'a>(
+///
+/// Paths from the `dep_log` are looked up first in `stat_cache`, but never
+/// stored in it. If it was not in that cache, it will be cached in
+/// `dep_stat_cache` instead. (So you can modify the `dep_log` afterwards
+/// by throwing out `dep_stat_cache`, but keeping `stat_cache`.)
+pub fn is_outdated<'a, 'b>(
 	rule: &'a BuildRule,
-	dep_log: &'a DepLog,
+	dep_log: &'b DepLog,
 	stat_cache: &mut StatCache<'a>,
+	dep_stat_cache: &mut StatCache<'b>,
 	check_dep: impl FnMut(&RawStr, bool) -> bool,
 ) -> Result<bool, Error> {
-	let oldest_output = check_outputs(rule, dep_log, stat_cache)?;
+	let oldest_output = check_outputs(rule, dep_log, stat_cache, dep_stat_cache)?;
 	check_dependencies(rule, stat_cache, oldest_output, check_dep)
 }
 
@@ -50,10 +56,16 @@ pub fn is_outdated<'a>(
 ///
 /// Otherwise, it returns the [`Timestamp`] of the oldest output, for
 /// comparison with the rule's [`inputs`][BuildRule::inputs].
-pub fn check_outputs<'a>(
+///
+/// Paths from the `dep_log` are looked up first in `stat_cache`, but never
+/// stored in it. If it was not in that cache, it will be cached in
+/// `dep_stat_cache` instead. (So you can modify the `dep_log` afterwards
+/// by throwing out `dep_stat_cache`, but keeping `stat_cache`.)
+pub fn check_outputs<'a, 'b>(
 	rule: &'a BuildRule,
-	dep_log: &'a DepLog,
+	dep_log: &'b DepLog,
 	stat_cache: &mut StatCache<'a>,
+	dep_stat_cache: &mut StatCache<'b>,
 ) -> Result<Option<Timestamp>, Error> {
 	let mut oldest = None;
 
@@ -73,7 +85,11 @@ pub fn check_outputs<'a>(
 					return Ok(None);
 				}
 				for dep in deps.deps() {
-					if let Some(dep_mtime) = stat_cache.mtime(dep.as_path())? {
+					let dep_mtime = match stat_cache.cached_mtime(dep.as_path()) {
+						Some(t) => t,
+						None => dep_stat_cache.mtime(dep.as_path())?,
+					};
+					if let Some(dep_mtime) = dep_mtime {
 						if mtime < dep_mtime {
 							// This recorded dependency is newer than the output.
 							return Ok(None);

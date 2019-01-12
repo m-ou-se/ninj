@@ -161,6 +161,7 @@ fn main() {
 	});
 
 	let mut stat_cache = StatCache::new();
+	let mut dep_stat_cache = StatCache::new();
 
 	let mut queue = BuildQueue::new(
 		spec.build_rules.len(),
@@ -168,14 +169,19 @@ fn main() {
 		|task: usize| {
 			let rule = &spec.build_rules[task];
 			let mut dependencies = Vec::new();
-			let check_dep = |dependency: &RawStr, order_only| {
-				let task = target_to_rule.get(dependency);
-				if let Some(&task) = task {
-					dependencies.push(DepInfo { task, order_only });
-				}
-				task.is_some()
-			};
-			let outdated = is_outdated(rule, &dep_log, &mut stat_cache, check_dep).unwrap();
+			let outdated = is_outdated(
+				rule,
+				&dep_log,
+				&mut stat_cache,
+				&mut dep_stat_cache,
+				|dependency: &RawStr, order_only| {
+					let task = target_to_rule.get(dependency);
+					if let Some(&task) = task {
+						dependencies.push(DepInfo { task, order_only });
+					}
+					task.is_some()
+				},
+			).unwrap();
 			TaskInfo {
 				dependencies,
 				phony: rule.is_phony(),
@@ -183,6 +189,8 @@ fn main() {
 			}
 		}
 	);
+
+	drop(dep_stat_cache);
 
 	if opt.dry_run {
 		let n_tasks = queue.n_left();
