@@ -4,25 +4,25 @@ mod status;
 mod timeformat;
 mod worker;
 
-use self::logger::Logger;
 use self::graph::generate_graph;
-use self::status::{BuildStatus, show_build_status};
+use self::logger::Logger;
+use self::status::{show_build_status, BuildStatus};
 use self::worker::Worker;
-use ninj::outdated::is_outdated;
-use ninj::queue::{BuildQueue, DepInfo, TaskInfo};
-use ninj::mtime::{Timestamp, StatCache};
+use log::{debug, error};
 use ninj::buildlog::BuildLog;
 use ninj::deplog::DepLogMut;
+use ninj::mtime::{StatCache, Timestamp};
+use ninj::outdated::is_outdated;
+use ninj::queue::{BuildQueue, DepInfo, TaskInfo};
 use ninj::spec::read;
 use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Mutex;
 use std::time::Instant;
 use structopt::StructOpt;
-use log::{error, debug};
 
 #[derive(StructOpt)]
 struct Options {
@@ -34,7 +34,8 @@ struct Options {
 	#[structopt(short = "C", parse(from_os_str))]
 	directory: Option<PathBuf>,
 
-	/// Dry run: Don't actually any run commands, but instead list what commands would be run.
+	/// Dry run: Don't actually any run commands, but instead list what commands
+	/// would be run.
 	#[structopt(short = "n")]
 	dry_run: bool,
 
@@ -105,7 +106,10 @@ fn main() {
 		}
 	}
 
-	let build_dir = spec.build_dir.as_ref().map_or(Path::new(""), |p| p.as_path());
+	let build_dir = spec
+		.build_dir
+		.as_ref()
+		.map_or(Path::new(""), |p| p.as_path());
 
 	let build_log = BuildLog::read(build_dir.join(".ninja_log")).unwrap_or_else(|e| {
 		error!("Error while reading .ninja_log: {}", e);
@@ -155,7 +159,11 @@ fn main() {
 			"targets" => {
 				for target in &spec.build_rules {
 					for output in &target.outputs {
-						println!("{}: {}", output, target.command.as_ref().map_or("phony", |c| &c.rule_name));
+						println!(
+							"{}: {}",
+							output,
+							target.command.as_ref().map_or("phony", |c| &c.rule_name)
+						);
 					}
 				}
 			}
@@ -180,39 +188,39 @@ fn main() {
 	let mut stat_cache = StatCache::new();
 	let mut dep_stat_cache = StatCache::new();
 
-	let mut queue = BuildQueue::new(
-		spec.build_rules.len(),
-		targets,
-		|task: usize| {
-			let rule = &spec.build_rules[task];
-			let mut dependencies = Vec::new();
-			let outdated = is_outdated(
-				rule,
-				&dep_log,
-				&mut stat_cache,
-				&mut dep_stat_cache,
-				|dependency: &RawStr, order_only| {
-					let task = target_to_rule.get(dependency);
-					if let Some(&task) = task {
-						dependencies.push(DepInfo { task, order_only });
-					}
-					task.is_some()
-				},
-			).unwrap();
-			TaskInfo {
-				dependencies,
-				phony: rule.is_phony(),
-				outdated,
-			}
+	let mut queue = BuildQueue::new(spec.build_rules.len(), targets, |task: usize| {
+		let rule = &spec.build_rules[task];
+		let mut dependencies = Vec::new();
+		let outdated = is_outdated(
+			rule,
+			&dep_log,
+			&mut stat_cache,
+			&mut dep_stat_cache,
+			|dependency: &RawStr, order_only| {
+				let task = target_to_rule.get(dependency);
+				if let Some(&task) = task {
+					dependencies.push(DepInfo { task, order_only });
+				}
+				task.is_some()
+			},
+		)
+		.unwrap();
+		TaskInfo {
+			dependencies,
+			phony: rule.is_phony(),
+			outdated,
 		}
-	);
+	});
 
 	drop(dep_stat_cache);
 
 	if opt.dry_run {
 		let n_tasks = queue.n_left();
 		while let Some(task) = queue.next() {
-			let c = spec.build_rules[task].command.as_ref().expect("Got phony task.");
+			let c = spec.build_rules[task]
+				.command
+				.as_ref()
+				.expect("Got phony task.");
 			let label = if opt.verbose || c.description.is_empty() {
 				&c.command
 			} else {
@@ -247,5 +255,6 @@ fn main() {
 		} else {
 			show_build_status(start_time, &status, &queue, &spec, opt.sleep_run);
 		}
-	}).unwrap();
+	})
+	.unwrap();
 }

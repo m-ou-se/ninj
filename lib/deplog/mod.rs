@@ -306,9 +306,10 @@ impl DepLogMut {
 
 		if need_write {
 			let size = dep_ids.len() as u32 * 4 + 12;
+			let mtime = mtime.map_or(0, Timestamp::to_nanos);
 			self.file.write_u32::<LE>(0x8000_0000 | size)?;
 			self.file.write_u32::<LE>(target)?;
-			self.file.write_u64::<LE>(mtime.map_or(0, Timestamp::to_nanos))?;
+			self.file.write_u64::<LE>(mtime)?;
 			for &dep in &dep_ids {
 				self.file.write_u32::<LE>(dep)?;
 			}

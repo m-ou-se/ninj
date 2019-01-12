@@ -399,11 +399,7 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 	/// Mark the task as ready, unblocking dependent tasks.
 	///
 	/// See [`BuildQueue::complete_task`].
-	pub fn complete_task(
-		&mut self,
-		task: usize,
-		restat: Option<&mut dyn FnMut(usize) -> bool>,
-	) {
+	pub fn complete_task(&mut self, task: usize, restat: Option<&mut dyn FnMut(usize) -> bool>) {
 		let n = self.queue.complete_task(task, restat);
 		// TODO: In most cases we'll want to notify one time less, because this
 		// thread itself will also continue executing tasks.

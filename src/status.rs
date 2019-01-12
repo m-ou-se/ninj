@@ -1,7 +1,7 @@
-use std::sync::{Condvar, Mutex};
-use ninj::spec::Spec;
 use crate::timeformat::MinSec;
 use ninj::queue::{AsyncBuildQueue, TaskStatus};
+use ninj::spec::Spec;
+use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,7 +41,6 @@ impl BuildStatus {
 	}
 }
 
-
 pub fn show_build_status(
 	start_time: Instant,
 	status: &BuildStatus,
@@ -76,17 +75,22 @@ pub fn show_build_status(
 					println!("=> \x1b[32mDone\x1b[K\x1b[m");
 				}
 				WorkerStatus::Running { task } => {
-					let command = spec.build_rules[*task].command.as_ref().expect("Got phony task");
+					let command = spec.build_rules[*task]
+						.command
+						.as_ref()
+						.expect("Got phony task");
 					let statustext = match queuestate.get_task_status(*task) {
 						TaskStatus::Running { start_time } => {
 							format!("{}", MinSec::since(start_time))
-						},
-						x => {
-							format!("{:?}", x)
 						}
+						x => format!("{:?}", x),
 					};
-					println!("=> [{t}] \x1b[33m{d} ...\x1b[K\x1b[m", d=command.description, t=statustext);
-				},
+					println!(
+						"=> [{t}] \x1b[33m{d} ...\x1b[K\x1b[m",
+						d = command.description,
+						t = statustext
+					);
+				}
 			}
 		}
 		println!("Building for {}...", MinSec::since(start_time));

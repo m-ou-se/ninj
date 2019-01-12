@@ -12,10 +12,10 @@
 use crate::deplog::DepLog;
 use crate::mtime::{StatCache, Timestamp};
 use crate::spec::BuildRule;
+use log::debug;
 use raw_string::unix::RawStrExt;
 use raw_string::RawStr;
 use std::io::{Error, ErrorKind};
-use log::debug;
 
 /// Check if a target is outdated.
 ///
@@ -82,7 +82,10 @@ pub fn check_outputs<'a, 'b>(
 			}
 			if let Some(deps) = dep_log.get(&output) {
 				if deps.mtime() < Some(mtime) {
-					debug!("{:?} is outdated because our dependency log is stale.", output);
+					debug!(
+						"{:?} is outdated because our dependency log is stale.",
+						output
+					);
 					return Ok(None);
 				}
 				for dep in deps.deps() {
@@ -96,12 +99,18 @@ pub fn check_outputs<'a, 'b>(
 							return Ok(None);
 						}
 					} else {
-						debug!("{:?} is outdated because {:?} no longer exists.", output, dep);
+						debug!(
+							"{:?} is outdated because {:?} no longer exists.",
+							output, dep
+						);
 						return Ok(None);
 					}
 				}
 			} else {
-				debug!("{:?} is outdated because we don't know its dependencies.", output);
+				debug!(
+					"{:?} is outdated because we don't know its dependencies.",
+					output
+				);
 				return Ok(None);
 			}
 		} else {
@@ -146,10 +155,16 @@ pub fn check_dependencies<'a>(
 		let mtime = stat_cache.mtime(path.as_path())?;
 		if mtime.is_none() {
 			outdated = true;
-			debug!("{:?} is outdated because {:?} does not exist.", rule.outputs, path);
+			debug!(
+				"{:?} is outdated because {:?} does not exist.",
+				rule.outputs, path
+			);
 		} else if !is_order_only && mtime > oldest_output {
 			outdated = true;
-			debug!("{:?} is outdated because {:?} is newer.", rule.outputs, path);
+			debug!(
+				"{:?} is outdated because {:?} is newer.",
+				rule.outputs, path
+			);
 		}
 		if !has_rule && mtime.is_none() {
 			return Err(Error::new(

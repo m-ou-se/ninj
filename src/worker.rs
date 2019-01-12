@@ -21,7 +21,14 @@ pub struct Worker<'a> {
 
 impl<'a> Worker<'a> {
 	pub fn run(self) -> Result<(), Error> {
-		let Worker { id, queue, spec, status, sleep, dep_log } = self;
+		let Worker {
+			id,
+			queue,
+			spec,
+			status,
+			sleep,
+			dep_log,
+		} = self;
 		let log = format!("ninj::worker-{}", id);
 		let mut lock = queue.lock();
 		loop {
@@ -98,7 +105,8 @@ impl<'a> Worker<'a> {
 						// TODO
 						debug!(
 							target: &log,
-							"I should check if {:?} is now outdated.", spec.build_rules[task].outputs
+							"I should check if {:?} is now outdated.",
+							spec.build_rules[task].outputs
 						);
 						false
 					};
