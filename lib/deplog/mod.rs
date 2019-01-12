@@ -1,5 +1,6 @@
 //! Reading and writing dependency logs (i.e. `.ninja_deps` files).
 
+use crate::mtime::Timestamp;
 use byteorder::{ReadBytesExt, WriteBytesExt, LE};
 use indexmap::map::Entry as IndexMapEntry;
 use indexmap::map::IndexMap;
@@ -32,7 +33,7 @@ pub struct TargetInfo<'a> {
 #[derive(Clone, Debug)]
 struct Record {
 	deps: Vec<u32>,
-	mtime: u64,
+	mtime: Option<Timestamp>,
 }
 
 impl DepLog {
@@ -199,7 +200,7 @@ impl DepLog {
 
 				*record = Some(Record {
 					deps: record_deps,
-					mtime,
+					mtime: Timestamp::from_nanos(mtime),
 				});
 			}
 		}
@@ -210,7 +211,7 @@ impl DepLog {
 
 impl<'a> TargetInfo<'a> {
 	/// Get the `mtime` that was recorded in the log.
-	pub fn mtime(&self) -> u64 {
+	pub fn mtime(&self) -> Option<Timestamp> {
 		self.record.mtime
 	}
 
@@ -272,7 +273,7 @@ impl DepLogMut {
 	pub fn insert_deps(
 		&mut self,
 		target: RawString,
-		mtime: u64,
+		mtime: Option<Timestamp>,
 		deps: Vec<RawString>,
 	) -> Result<(), Error> {
 		let target = self.insert_path(target)?;
@@ -307,7 +308,7 @@ impl DepLogMut {
 			let size = dep_ids.len() as u32 * 4 + 12;
 			self.file.write_u32::<LE>(0x8000_0000 | size)?;
 			self.file.write_u32::<LE>(target)?;
-			self.file.write_u64::<LE>(mtime)?;
+			self.file.write_u64::<LE>(mtime.map_or(0, Timestamp::to_nanos))?;
 			for &dep in &dep_ids {
 				self.file.write_u32::<LE>(dep)?;
 			}
@@ -341,27 +342,27 @@ mod test {
 		for _ in 0..2 {
 			{
 				let mut dep_log = DepLogMut::open(file_name)?;
-				dep_log.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
-				dep_log.insert_deps("output2".into(), 200, vec!["input1".into(), "input3".into()])?;
+				dep_log.insert_deps("output1".into(), Timestamp::from_nanos(100), vec!["input1".into(), "input2".into()])?;
+				dep_log.insert_deps("output2".into(), Timestamp::from_nanos(200), vec!["input1".into(), "input3".into()])?;
 			}
 			{
 				let dep_log = DepLog::read(file_name)?;
-				assert_eq!(dep_log.get(RawStr::from_str("output1")).unwrap().mtime(), 100);
-				assert_eq!(dep_log.get(RawStr::from_str("output2")).unwrap().mtime(), 200);
+				assert_eq!(dep_log.get(RawStr::from_str("output1")).unwrap().mtime(), Timestamp::from_nanos(100));
+				assert_eq!(dep_log.get(RawStr::from_str("output2")).unwrap().mtime(), Timestamp::from_nanos(200));
 				assert!(dep_log.get(RawStr::from_str("output1")).unwrap().deps().eq(&["input1", "input2"]));
 				assert!(dep_log.get(RawStr::from_str("output2")).unwrap().deps().eq(&["input1", "input3"]));
 			}
 			{
 				let mut dep_log = DepLogMut::open(file_name)?;
-				dep_log.insert_deps("output1".into(), 100, vec!["input1".into(), "input2".into()])?;
-				dep_log.insert_deps("output2".into(), 200, vec!["input1".into()])?;
-				dep_log.insert_deps("output3".into(), 300, vec!["input4".into()])?;
+				dep_log.insert_deps("output1".into(), Timestamp::from_nanos(100), vec!["input1".into(), "input2".into()])?;
+				dep_log.insert_deps("output2".into(), Timestamp::from_nanos(200), vec!["input1".into()])?;
+				dep_log.insert_deps("output3".into(), Timestamp::from_nanos(300), vec!["input4".into()])?;
 			}
 			{
 				let dep_log = DepLog::read(file_name)?;
-				assert_eq!(dep_log.get(RawStr::from_str("output1")).unwrap().mtime(), 100);
-				assert_eq!(dep_log.get(RawStr::from_str("output2")).unwrap().mtime(), 200);
-				assert_eq!(dep_log.get(RawStr::from_str("output3")).unwrap().mtime(), 300);
+				assert_eq!(dep_log.get(RawStr::from_str("output1")).unwrap().mtime(), Timestamp::from_nanos(100));
+				assert_eq!(dep_log.get(RawStr::from_str("output2")).unwrap().mtime(), Timestamp::from_nanos(200));
+				assert_eq!(dep_log.get(RawStr::from_str("output3")).unwrap().mtime(), Timestamp::from_nanos(300));
 				assert!(dep_log.get(RawStr::from_str("output1")).unwrap().deps().eq(&["input1", "input2"]));
 				assert!(dep_log.get(RawStr::from_str("output2")).unwrap().deps().eq(&["input1"]));
 				assert!(dep_log.get(RawStr::from_str("output3")).unwrap().deps().eq(&["input4"]));

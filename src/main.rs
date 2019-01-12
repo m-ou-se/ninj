@@ -3,7 +3,7 @@ mod timeformat;
 
 use self::graph::generate_graph;
 use ninj::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
-use ninj::mtime::StatCache;
+use ninj::mtime::{Timestamp, StatCache};
 use self::timeformat::MinSec;
 use ninj::buildlog::BuildLog;
 use ninj::deplog::DepLogMut;
@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::path::{PathBuf, Path};
 use std::process::exit;
 use std::sync::{Condvar, Mutex};
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -111,16 +111,17 @@ fn main() {
 						let mtime = || {
 							std::fs::metadata(path.as_path())
 								.and_then(|m| m.modified())
-								.unwrap_or(UNIX_EPOCH)
+								.ok()
+								.map(Timestamp::from_system_time)
 						};
-						let deps_mtime = UNIX_EPOCH + Duration::from_nanos(deps.mtime());
+						let nanos = deps.mtime().map_or(0, Timestamp::to_nanos);
 						println!(
 							"{}: #deps {}, deps mtime {}.{:09} ({})",
 							path,
 							deps.deps().len(),
-							deps.mtime() / 1_000_000_000,
-							deps.mtime() % 1_000_000_000,
-							if deps.mtime() == 0 || deps_mtime < mtime() {
+							nanos / 1_000_000_000,
+							nanos % 1_000_000_000,
+							if deps.mtime().map_or(true, |t| Some(t) < mtime()) {
 								"STALE"
 							} else {
 								"VALID"
@@ -181,7 +182,7 @@ fn main() {
 						continue;
 					}
 					if let Some(deps) = dep_log.get(&output) {
-						if UNIX_EPOCH + Duration::from_nanos(deps.mtime()) < mtime {
+						if deps.mtime() < Some(mtime) {
 							// Our dependency information is outdated, so treat the target as outdated.
 							output_time = None;
 							outdated = true;
@@ -342,9 +343,8 @@ fn main() {
 						if rule.deps == Some(DepStyle::Gcc) {
 							read_deps_file(rule.depfile.as_path(), |target, deps| {
 								// TODO: Don't use now().
-								let mtime = std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-								let mtime = mtime.as_secs() * 1_000_000_000 + mtime.subsec_nanos() as u64;
-								dep_log.lock().unwrap().insert_deps(target, mtime, deps).unwrap_or_else(|e| {
+								let mtime = Timestamp::from_system_time(std::time::SystemTime::now());
+								dep_log.lock().unwrap().insert_deps(target, Some(mtime), deps).unwrap_or_else(|e| {
 									eprintln!("Unable to update dependency log: {}", e);
 									exit(1);
 								});

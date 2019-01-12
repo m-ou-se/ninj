@@ -1,5 +1,6 @@
 //! Reading and writing build logs (i.e. `.ninja_log` files).
 
+use crate::mtime::Timestamp;
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -21,7 +22,7 @@ pub struct BuildLog {
 pub struct Entry {
 	pub start_time_ms: u32,
 	pub end_time_ms: u32,
-	pub restat_mtime: u64,
+	pub restat_mtime: Option<Timestamp>,
 	pub command_hash: u64,
 }
 
@@ -99,7 +100,9 @@ impl BuildLog {
 			let value = Entry {
 				start_time_ms: parse(&line[0..tab1]).ok_or_else(not_an_integer)?,
 				end_time_ms: parse(&line[tab1 + 1..tab2]).ok_or_else(not_an_integer)?,
-				restat_mtime: parse(&line[tab2 + 1..tab3]).ok_or_else(not_an_integer)?,
+				restat_mtime: Timestamp::from_nanos(
+					parse(&line[tab2 + 1..tab3]).ok_or_else(not_an_integer)?,
+				),
 				command_hash: if version < 5 {
 					murmur_hash_64a(&line[tab4 + 1..].as_bytes())
 				} else {
