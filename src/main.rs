@@ -1,9 +1,8 @@
 mod graph;
-mod outdated;
 mod timeformat;
 
 use self::graph::generate_graph;
-use self::outdated::is_outdated;
+use ninj::outdated::is_outdated;
 use ninj::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
 use ninj::mtime::{Timestamp, StatCache};
 use self::timeformat::MinSec;
