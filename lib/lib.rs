@@ -40,10 +40,17 @@
 //!   The [`mtime`] module contains an [`mtime`][mtime::mtime] function, but
 //!   also has a [`StatCache`][mtime::StatCache] which helps to reducing the
 //!   number of `stat()` syscalls.
+//!
+//! - **Checking for outdated targets**
+//!
+//!   The [`outdated`] module contains an [`is_outdated`][outdated::is_outdated]
+//!   function, which checks the `mtime`'s of targets and their dependencies
+//!   to check if it should be rebuilt.
 
 pub mod buildlog;
 pub mod depfile;
 pub mod deplog;
 pub mod mtime;
+pub mod outdated;
 pub mod queue;
 pub mod spec;

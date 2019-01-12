@@ -1,7 +1,9 @@
 mod graph;
+mod outdated;
 mod timeformat;
 
 use self::graph::generate_graph;
+use self::outdated::is_outdated;
 use ninj::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
 use ninj::mtime::{Timestamp, StatCache};
 use self::timeformat::MinSec;
@@ -166,72 +168,20 @@ fn main() {
 		targets,
 		|task: usize| {
 			let rule = &spec.build_rules[task];
-
-			// Get the time of the oldest output.
-			let mut output_time = None;
-			let mut outdated = false;
-			for output in &rule.outputs {
-				if let Some(mtime) = stat_cache.mtime(output.as_path()).unwrap() {
-					if output_time.map_or(true, |m| m > mtime) {
-						output_time = Some(mtime);
-					}
-					if rule.command.as_ref().map_or(true, |c| !c.deps.is_some()) {
-						// Don't even look up dependencies in de dependency log
-						// for targets that don't use extra dependencies
-						// anyway.
-						continue;
-					}
-					if let Some(deps) = dep_log.get(&output) {
-						if deps.mtime() < Some(mtime) {
-							// Our dependency information is outdated, so treat the target as outdated.
-							output_time = None;
-							outdated = true;
-							break;
-						}
-						for dep in deps.deps() {
-							let dep_mtime = stat_cache.mtime(dep.as_path()).unwrap();
-							if dep_mtime.map_or(true, |m| m > mtime) {
-								// This recorded dependency is newer than the output, so we're definitely outdated.
-								output_time = None;
-								outdated = true;
-								break;
-							}
-						}
-					} else {
-						// Our dependency information is non-existent, so treat the target as outdated.
-						output_time = None;
-						outdated = true;
-						break;
-					}
-				} else {
-					// This output doesn't even exist, so the task is definitely out of date.
-					output_time = None;
-					outdated = true;
-					break;
-				}
-			}
-
-			// Check all the inputs, and resolve dependencies.
 			let mut dependencies = Vec::new();
-			for (input, order_only) in rule.inputs.iter().map(|p| (p, false))
-				.chain(rule.order_deps.iter().map(|p| (p, true)))
-			{
-				let task = target_to_rule.get(&input[..]);
+			let check_dep = |dependency: &RawStr, order_only| {
+				let task = target_to_rule.get(dependency);
 				if let Some(&task) = task {
-					dependencies.push(DepInfo { task: task, order_only });
+					dependencies.push(DepInfo { task, order_only });
 				}
-				if let Some(mtime) = stat_cache.mtime(input.as_path()).unwrap() {
-					if output_time.map_or(false, |m| m < mtime) {
-						outdated = true;
-					}
-				} else if task.is_none() {
-					// The file does not exist, and no rule generates it.
-					eprintln!("Missing file {:?}", input);
-					exit(1);
-				}
+				task.is_some()
+			};
+			let outdated = is_outdated(rule, &dep_log, &mut stat_cache, check_dep).unwrap();
+			TaskInfo {
+				dependencies,
+				phony: rule.is_phony(),
+				outdated,
 			}
-
-			TaskInfo { dependencies, phony: rule.is_phony(), outdated }
 		}
 	);
 
