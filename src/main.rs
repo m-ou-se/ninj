@@ -1,15 +1,16 @@
 mod graph;
 mod logger;
+mod status;
 mod timeformat;
 mod worker;
 
 use self::logger::Logger;
 use self::graph::generate_graph;
-use self::worker::{BuildStatus, WorkerStatus, worker};
+use self::status::{BuildStatus, show_build_status};
+use self::worker::worker;
 use ninj::outdated::is_outdated;
-use ninj::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
+use ninj::queue::{BuildQueue, DepInfo, TaskInfo};
 use ninj::mtime::{Timestamp, StatCache};
-use self::timeformat::MinSec;
 use ninj::buildlog::BuildLog;
 use ninj::deplog::DepLogMut;
 use ninj::spec::read;
@@ -19,7 +20,7 @@ use std::collections::BTreeMap;
 use std::path::{PathBuf, Path};
 use std::process::exit;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use structopt::StructOpt;
 use log::{error, debug};
 
@@ -227,10 +228,9 @@ fn main() {
 	let queue = queue.make_async();
 	let dep_log = Mutex::new(dep_log);
 	let status = BuildStatus::new(n_threads);
-	let starttime = Instant::now();
+	let start_time = Instant::now();
 
 	crossbeam::thread::scope(|scope| {
-		let mut lock = status.inner.lock().unwrap();
 		for i in 0..n_threads {
 			let queue = &queue;
 			let spec = &spec;
@@ -243,54 +243,8 @@ fn main() {
 		}
 		if opt.debug {
 			debug!("Regular output disabled because debug messages are enabled.");
-			return;
-		}
-		println!("{}:", if opt.sleep_run { "Sleeping" } else { "Building" });
-		loop {
-			let mut now = Instant::now();
-			let waittime = now + Duration::from_millis(100);
-			while !lock.dirty && now < waittime {
-				lock = status.condvar.wait_timeout(lock, waittime - now).unwrap().0;
-				now = Instant::now();
-			}
-			let queuelock = queue.lock();
-			let queuestate = queuelock.clone_queue();
-			drop(queuelock);
-			let workers = lock.workers.clone();
-			lock.dirty = false;
-			drop(lock);
-			for worker in &workers {
-				match worker {
-					WorkerStatus::Starting => {
-						println!("=> \x1b[34mStarting...\x1b[K\x1b[m");
-					}
-					WorkerStatus::Idle => {
-						println!("=> \x1b[34mIdle\x1b[K\x1b[m");
-					}
-					WorkerStatus::Done => {
-						println!("=> \x1b[32mDone\x1b[K\x1b[m");
-					}
-					WorkerStatus::Running { task } => {
-						let command = spec.build_rules[*task].command.as_ref().expect("Got phony task");
-						let statustext = match queuestate.get_task_status(*task) {
-							TaskStatus::Running { start_time } => {
-								format!("{}", MinSec::since(start_time))
-							},
-							x => {
-								format!("{:?}", x)
-							}
-						};
-						println!("=> [{t}] \x1b[33m{d} ...\x1b[K\x1b[m", d=command.description, t=statustext);
-					},
-				}
-			}
-			println!("Building for {}...", MinSec::since(starttime));
-			if workers.iter().all(|worker| *worker == WorkerStatus::Done) {
-				break;
-			}
-			print!("\x1b[{}A", workers.len() + 1);
-			lock = status.inner.lock().unwrap();
+		} else {
+			show_build_status(start_time, &status, &queue, &spec, opt.sleep_run);
 		}
 	}).unwrap();
-	println!("\x1b[32;1mFinished.\x1b[m");
 }

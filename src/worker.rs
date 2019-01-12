@@ -1,3 +1,4 @@
+use crate::status::{BuildStatus, WorkerStatus};
 use log::{debug, error};
 use ninj::depfile::read_deps_file;
 use ninj::deplog::DepLogMut;
@@ -7,44 +8,7 @@ use ninj::spec::{DepStyle, Spec};
 use raw_string::unix::RawStrExt;
 use std::io::Error;
 use std::process::exit;
-use std::sync::{Condvar, Mutex};
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum WorkerStatus {
-	Starting,
-	Idle,
-	Running { task: usize },
-	Done,
-}
-
-pub struct BuildStatusInner {
-	pub workers: Vec<WorkerStatus>,
-	pub dirty: bool,
-}
-
-pub struct BuildStatus {
-	pub inner: Mutex<BuildStatusInner>,
-	pub condvar: Condvar,
-}
-
-impl BuildStatus {
-	pub fn new(n_threads: usize) -> Self {
-		BuildStatus {
-			inner: Mutex::new(BuildStatusInner {
-				workers: vec![WorkerStatus::Starting; n_threads],
-				dirty: true,
-			}),
-			condvar: Condvar::new(),
-		}
-	}
-
-	pub fn set_status(&self, worker: usize, status: WorkerStatus) {
-		let mut lock = self.inner.lock().unwrap();
-		lock.workers[worker] = status;
-		lock.dirty = true;
-		self.condvar.notify_all();
-	}
-}
+use std::sync::Mutex;
 
 pub fn worker(
 	id: usize,
