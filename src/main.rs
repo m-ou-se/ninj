@@ -290,8 +290,11 @@ fn main() {
 						break;
 					};
 					status.set_status(i, WorkerStatus::Running { task });
+					let restat;
+					let mut restat_fn;
 					if opt.sleep_run {
 						std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
+						restat = None;
 					} else {
 						let rule = &spec.build_rules[task].command.as_ref().expect("Got phony task.");
 						debug!(target: &log, "Running: {:?}", rule.command);
@@ -328,9 +331,20 @@ fn main() {
 								exit(1);
 							});
 						}
+						if rule.restat {
+							debug!(target: &log, "I should now re-stat {:?}", spec.build_rules[task].outputs);
+							restat_fn = |task: usize| {
+								// TODO
+								debug!(target: &log, "I should check if {:?} is now outdated.", spec.build_rules[task].outputs);
+								false
+							};
+							restat = Some::<&mut dyn FnMut(usize) -> bool>(&mut restat_fn);
+						} else {
+							restat = None;
+						}
 					}
 					lock = queue.lock();
-					lock.complete_task(task, None);
+					lock.complete_task(task, restat);
 				}
 				status.set_status(i, WorkerStatus::Done);
 			});
