@@ -14,7 +14,10 @@ pub fn read_deps_file(
 	file_name: &Path,
 	f: impl FnMut(RawString, Vec<RawString>) -> Result<(), Error>,
 ) -> Result<(), Error> {
-	read_deps_file_from(File::open(file_name)?, f)
+	let file = File::open(file_name).map_err(|e| {
+		Error::new(e.kind(), format!("Unable to read {:?}: {}", file_name, e))
+	})?;
+	read_deps_file_from(file, f)
 }
 
 /// Read a Makfile-style dependency file.

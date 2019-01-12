@@ -36,7 +36,10 @@ impl BuildLog {
 
 	/// Read a build log from a file.
 	pub fn read(file: impl AsRef<Path>) -> Result<BuildLog, Error> {
-		BuildLog::read_from(File::open(file)?)
+		let file = File::open(file.as_ref()).map_err(|e| {
+			Error::new(e.kind(), format!("Unable to read {:?}: {}", file.as_ref(), e))
+		})?;
+		BuildLog::read_from(file)
 	}
 
 	/// Read a build log.

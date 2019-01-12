@@ -257,8 +257,8 @@ impl From<ErrorWithLocation<std::str::Utf8Error>> for ErrorWithLocation<ReadErro
 	}
 }
 
-impl<T: std::fmt::Display> From<ErrorWithLocation<T>> for std::io::Error {
+impl<T: std::error::Error + Send + Sync + 'static> From<ErrorWithLocation<T>> for std::io::Error {
 	fn from(src: ErrorWithLocation<T>) -> std::io::Error {
-		std::io::Error::new(std::io::ErrorKind::Other, format!("{}", src))
+		std::io::Error::new(std::io::ErrorKind::Other, src)
 	}
 }
