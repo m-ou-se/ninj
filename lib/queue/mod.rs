@@ -80,9 +80,6 @@ pub enum TaskStatus {
 	Finished {
 		/// The time it took to run this task.
 		running_time: Duration,
-		/// Whether running this task caused the tasks dependent on this one to
-		/// become outdated.
-		was_outdated: bool,
 	},
 	/// The task was not outdated, so did not need to be run.
 	NotRun,
@@ -212,7 +209,7 @@ impl BuildQueue {
 		// Mark any ready phony tasks as finished, and update the tasks
 		// dependent on it.
 		while let Some(task) = finished.pop() {
-			queue.update_next_tasks_for_finished_task(task, &mut finished);
+			queue.update_finished_task(task, &mut finished, None);
 		}
 
 		// TODO: Check for cycles.
@@ -254,16 +251,20 @@ impl BuildQueue {
 
 	/// Mark the task as ready, possibly queueing dependent tasks.
 	///
-	/// `was_outdated` should be set to true if any tasks depending on this
-	/// task should be marked as outdated.
+	/// `restat` is called for the non-outdated tasks dependent on this task to
+	/// check if they're now outdated. If not given, they are all considered
+	/// outdated.
 	///
 	/// Returns the number of newly ready tasks that were unblocked by the
 	/// completion of this one.
-	pub fn complete_task(&mut self, task: usize, was_outdated: bool) -> usize {
+	pub fn complete_task(
+		&mut self,
+		task: usize,
+		restat: Option<&mut dyn FnMut(usize) -> bool>,
+	) -> usize {
 		self.tasks[task].status = match &self.tasks[task].status {
 			TaskStatus::Running { start_time } => TaskStatus::Finished {
 				running_time: start_time.elapsed(),
-				was_outdated,
 			},
 			_ => panic!(
 				"complete_task({}) on task that isn't Running: {:?}",
@@ -272,9 +273,9 @@ impl BuildQueue {
 		};
 		let mut newly_ready = 0;
 		let mut newly_finished = Vec::new();
-		newly_ready += self.update_next_tasks_for_finished_task(task, &mut newly_finished);
+		newly_ready += self.update_finished_task(task, &mut newly_finished, restat);
 		while let Some(task) = newly_finished.pop() {
-			newly_ready += self.update_next_tasks_for_finished_task(task, &mut newly_finished);
+			newly_ready += self.update_finished_task(task, &mut newly_finished, None);
 		}
 		newly_ready
 	}
@@ -285,15 +286,16 @@ impl BuildQueue {
 	/// Returns the amount of newly ready tasks.
 	///
 	/// Adds any now finished (phony and up-to-date) tasks to `newly_finished`.
-	fn update_next_tasks_for_finished_task(
+	fn update_finished_task(
 		&mut self,
 		task: usize,
 		newly_finished: &mut Vec<usize>,
+		mut restat: Option<&mut dyn FnMut(usize) -> bool>,
 	) -> usize {
-		let was_outdated = match &self.tasks[task].status {
+		let did_run = match &self.tasks[task].status {
 			TaskStatus::NotRun => false,
 			TaskStatus::PhonyFinished => true,
-			TaskStatus::Finished { was_outdated, .. } => *was_outdated,
+			TaskStatus::Finished { .. } => true,
 			_ => unreachable!("Task {} was not finished: {:?}", task, self.tasks[task]),
 		};
 		let mut newly_ready = 0;
@@ -306,8 +308,12 @@ impl BuildQueue {
 			let next_outdated;
 			match &mut self.tasks[next].status {
 				TaskStatus::Needed { phony, outdated } => {
-					if was_outdated && !order_only {
-						*outdated = true;
+					if did_run && !order_only && !*outdated {
+						*outdated = if let Some(restat) = restat.as_mut() {
+							restat(next)
+						} else {
+							true
+						};
 					}
 					next_phony = *phony;
 					next_outdated = *outdated;
@@ -391,8 +397,14 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 	}
 
 	/// Mark the task as ready, unblocking dependent tasks.
-	pub fn complete_task(&mut self, task: usize, was_outdated: bool) {
-		let n = self.queue.complete_task(task, was_outdated);
+	///
+	/// See [`BuildQueue::complete_task`].
+	pub fn complete_task(
+		&mut self,
+		task: usize,
+		restat: Option<&mut dyn FnMut(usize) -> bool>,
+	) {
+		let n = self.queue.complete_task(task, restat);
 		// TODO: In most cases we'll want to notify one time less, because this
 		// thread itself will also continue executing tasks.
 		if self.queue.n_left == 0 {

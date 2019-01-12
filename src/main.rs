@@ -217,7 +217,7 @@ fn main() {
 				&c.description
 			};
 			println!("[{}/{}] {}", n_tasks - queue.n_left(), n_tasks, label);
-			queue.complete_task(task, true);
+			queue.complete_task(task, None);
 		}
 		exit(0);
 	}
@@ -330,7 +330,7 @@ fn main() {
 						}
 					}
 					lock = queue.lock();
-					lock.complete_task(task, true);
+					lock.complete_task(task, None);
 				}
 				status.set_status(i, WorkerStatus::Done);
 			});
