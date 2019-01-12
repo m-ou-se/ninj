@@ -95,18 +95,13 @@ fn main() {
 
 	let target_to_rule = spec.make_index();
 
-	let build_dir = spec
-		.build_dir
-		.as_ref()
-		.map_or(Path::new(""), |p| p.as_path());
-
-	let build_log = BuildLog::read(build_dir.join(".ninja_log")).unwrap_or_else(|e| {
+	let build_log = BuildLog::read(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
 		error!("Error while reading .ninja_log: {}", e);
 		error!("Not using .ninja_log.");
 		BuildLog::new()
 	});
 
-	let dep_log = DepLogMut::open(build_dir.join(".ninja_deps")).unwrap_or_else(|e| {
+	let dep_log = DepLogMut::open(spec.build_dir().join(".ninja_deps")).unwrap_or_else(|e| {
 		error!("Error while reading .ninja_deps: {}", e);
 		// TODO: Delete and start a new file.
 		exit(1);

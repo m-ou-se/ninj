@@ -106,6 +106,12 @@ impl Spec {
 		}
 	}
 
+	/// Get the 'builddir'.
+	pub fn build_dir(&self) -> &std::path::Path {
+		use raw_string::unix::RawStrExt;
+		self.build_dir.as_ref().map_or(std::path::Path::new(""), |p| p.as_path())
+	}
+
 	/// Generate an index mapping output file names to build rule indexes.
 	pub fn make_index(&self) -> BTreeMap<&RawStr, usize> {
 		use log::warn;
