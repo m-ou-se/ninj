@@ -14,7 +14,8 @@ pub mod scope;
 pub use self::read::read;
 pub use self::read::read_from;
 
-use raw_string::RawString;
+use raw_string::{RawStr, RawString};
+use std::collections::BTreeMap;
 
 /// The result of reading a `build.ninja` file, the specification of how to
 /// build what.
@@ -103,5 +104,22 @@ impl Spec {
 			default_targets: Vec::new(),
 			build_dir: None,
 		}
+	}
+
+	/// Generate an index mapping output file names to build rule indexes.
+	pub fn make_index(&self) -> BTreeMap<&RawStr, usize> {
+		use log::warn;
+		let mut index = BTreeMap::<&RawStr, usize>::new();
+		for (rule_i, rule) in self.build_rules.iter().enumerate() {
+			for output in &rule.outputs {
+				if index.insert(&output, rule_i).is_some() {
+					warn!(
+						"Warning, multiple rules generating {:?}. Ignoring all but last one.",
+						output
+					);
+				}
+			}
+		}
+		index
 	}
 }

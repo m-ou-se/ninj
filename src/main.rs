@@ -17,7 +17,6 @@ use ninj::queue::{BuildQueue, DepInfo, TaskInfo};
 use ninj::spec::read;
 use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Mutex;
@@ -94,17 +93,7 @@ fn main() {
 		&opt.targets
 	};
 
-	let mut target_to_rule = BTreeMap::<&RawStr, usize>::new();
-	for (rule_i, rule) in spec.build_rules.iter().enumerate() {
-		for output in &rule.outputs {
-			if target_to_rule.insert(&output, rule_i).is_some() {
-				error!(
-					"Warning, multiple rules generating {:?}. Ignoring all but last one.",
-					output
-				);
-			}
-		}
-	}
+	let target_to_rule = spec.make_index();
 
 	let build_dir = spec
 		.build_dir
