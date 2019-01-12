@@ -70,12 +70,7 @@ impl BuildLog {
 
 		let missing_field = || Error::new(ErrorKind::InvalidData, "Missing field");
 		let not_an_integer = || Error::new(ErrorKind::InvalidData, "Field is not an integer");
-		let not_hex = || {
-			Error::new(
-				ErrorKind::InvalidData,
-				"Command hash is not a 64-bit hexadecimal number",
-			)
-		};
+		let not_hex = || Error::new(ErrorKind::InvalidData, "Invalid command hash");
 
 		let mut entries = BTreeMap::new();
 
