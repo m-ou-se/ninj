@@ -1,23 +1,24 @@
 mod graph;
 mod logger;
 mod timeformat;
+mod worker;
 
 use self::logger::Logger;
 use self::graph::generate_graph;
+use self::worker::{BuildStatus, WorkerStatus, worker};
 use ninj::outdated::is_outdated;
 use ninj::queue::{BuildQueue, DepInfo, TaskInfo, TaskStatus};
 use ninj::mtime::{Timestamp, StatCache};
 use self::timeformat::MinSec;
 use ninj::buildlog::BuildLog;
 use ninj::deplog::DepLogMut;
-use ninj::depfile::read_deps_file;
-use ninj::spec::{read, DepStyle};
+use ninj::spec::read;
 use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
 use std::path::{PathBuf, Path};
 use std::process::exit;
-use std::sync::{Condvar, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
 use log::{error, debug};
@@ -222,47 +223,10 @@ fn main() {
 		exit(0);
 	}
 
-	let queue = queue.make_async();
-
 	let n_threads = opt.n_threads;
-
-	#[derive(Debug, Clone, PartialEq)]
-	enum WorkerStatus {
-		Starting,
-		Idle,
-		Running { task: usize },
-		Done,
-	}
-
-	struct BuildStatusInner {
-		workers: Vec<WorkerStatus>,
-		dirty: bool,
-	}
-
-	struct BuildStatus {
-		inner: Mutex<BuildStatusInner>,
-		condvar: Condvar,
-	}
-
-	let status = BuildStatus {
-		inner: Mutex::new(BuildStatusInner {
-			workers: vec![WorkerStatus::Starting; n_threads],
-			dirty: true,
-		}),
-		condvar: Condvar::new(),
-	};
-
-	impl BuildStatus {
-		fn set_status(&self, worker: usize, status: WorkerStatus) {
-			let mut lock = self.inner.lock().unwrap();
-			lock.workers[worker] = status;
-			lock.dirty = true;
-			self.condvar.notify_all();
-		}
-	}
-
+	let queue = queue.make_async();
 	let dep_log = Mutex::new(dep_log);
-
+	let status = BuildStatus::new(n_threads);
 	let starttime = Instant::now();
 
 	crossbeam::thread::scope(|scope| {
@@ -271,82 +235,10 @@ fn main() {
 			let queue = &queue;
 			let spec = &spec;
 			let status = &status;
-			let opt = &opt;
+			let sleep = opt.sleep_run;
 			let dep_log = &dep_log;
 			scope.spawn(move |_| {
-				let log = format!("ninj::worker-{}", i);
-				let mut lock = queue.lock();
-				loop {
-					let mut next = lock.next();
-					drop(lock);
-					if next.is_none() {
-						status.set_status(i, WorkerStatus::Idle);
-						next = queue.lock().wait();
-					}
-					let task = if let Some(task) = next {
-						task
-					} else {
-						// There are no remaining jobs
-						break;
-					};
-					status.set_status(i, WorkerStatus::Running { task });
-					let restat;
-					let mut restat_fn;
-					if opt.sleep_run {
-						std::thread::sleep(std::time::Duration::from_millis(2500 + i as u64 * 5123 % 2000));
-						restat = None;
-					} else {
-						let rule = &spec.build_rules[task].command.as_ref().expect("Got phony task.");
-						debug!(target: &log, "Running: {:?}", rule.command);
-						let status = std::process::Command::new("sh")
-							.arg("-c")
-							.arg(rule.command.as_osstr())
-							.status()
-							.unwrap_or_else(|e| {
-								error!("Unable to spawn sh process: {}", e);
-								exit(1);
-							});
-						match status.code() {
-							Some(0) => {}
-							Some(x) => {
-								error!("Exited with status code {}: {}", x, rule.command);
-								exit(1);
-							}
-							None => {
-								error!("Exited with signal: {}", rule.command);
-								exit(1);
-							}
-						}
-						if rule.deps == Some(DepStyle::Gcc) {
-							read_deps_file(rule.depfile.as_path(), |target, deps| {
-								// TODO: Don't use now().
-								let mtime = Timestamp::from_system_time(std::time::SystemTime::now());
-								dep_log.lock().unwrap().insert_deps(target, Some(mtime), deps).unwrap_or_else(|e| {
-									error!("Unable to update dependency log: {}", e);
-									exit(1);
-								});
-								Ok(())
-							}).unwrap_or_else(|e| {
-								error!("Unable to read dependency file {:?}: {}", rule.depfile, e);
-								exit(1);
-							});
-						}
-						if rule.restat {
-							debug!(target: &log, "I should now re-stat {:?}", spec.build_rules[task].outputs);
-							restat_fn = |task: usize| {
-								// TODO
-								debug!(target: &log, "I should check if {:?} is now outdated.", spec.build_rules[task].outputs);
-								false
-							};
-							restat = Some::<&mut dyn FnMut(usize) -> bool>(&mut restat_fn);
-						} else {
-							restat = None;
-						}
-					}
-					lock = queue.lock();
-					lock.complete_task(task, restat);
-				}
-				status.set_status(i, WorkerStatus::Done);
+				worker(i, queue, spec, status, sleep, dep_log).unwrap();
 			});
 		}
 		if opt.debug {
