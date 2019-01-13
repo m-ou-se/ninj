@@ -53,6 +53,11 @@
 //!   function, which checks the `mtime`'s of targets and their dependencies
 //!   to check if it should be rebuilt.
 
+#![warn(bare_trait_objects)]
+#![warn(trivial_casts)]
+#![warn(trivial_numeric_casts)]
+#![warn(unused_qualifications)]
+
 pub mod buildlog;
 pub mod depfile;
 pub mod deplog;
