@@ -70,7 +70,10 @@ impl DepLog {
 	/// Read a log from a file.
 	pub fn read(file: impl AsRef<Path>) -> Result<DepLog, Error> {
 		let mut file = File::open(file.as_ref()).map_err(|e| {
-			Error::new(e.kind(), format!("Unable to read {:?}: {}", file.as_ref(), e))
+			Error::new(
+				e.kind(),
+				format!("Unable to read {:?}: {}", file.as_ref(), e),
+			)
 		})?;
 		DepLog::read_from(&mut file)
 	}
