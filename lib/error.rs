@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 /// A line in a file: The place where something went srong.
 ///
 /// Both fields are optional, in case they are not known.
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Location<'a> {
 	pub file: Option<&'a Path>,
 	pub line: Option<NonZeroU32>,
@@ -23,6 +23,9 @@ impl Location<'static> {
 }
 
 /// An error which happened at a specific line in some file.
+///
+/// Use [`at`][AddLocationToError::at] on an [`Error`], or
+/// [`err_at`][AddLocationToResult::err_at] on a [`Result`] to make one.
 #[derive(Debug)]
 pub struct ErrorWithLocation<T> {
 	pub file: Option<PathBuf>,
@@ -37,6 +40,26 @@ impl<'a> Location<'a> {
 			file: self.file.map(|p| p.to_path_buf()),
 			line: self.line,
 			error,
+		}
+	}
+}
+
+impl<A> ErrorWithLocation<A> {
+	/// Convert one error type to another, while keeping the location
+	/// information.
+	pub fn convert<B: From<A>>(self) -> ErrorWithLocation<B> {
+		ErrorWithLocation {
+			file: self.file,
+			line: self.line,
+			error: From::from(self.error),
+		}
+	}
+
+	/// Get the location at which the error occured.
+	pub fn location(&self) -> Location {
+		Location {
+			file: self.file.as_ref().map(PathBuf::as_path),
+			line: self.line,
 		}
 	}
 }
@@ -69,34 +92,28 @@ impl<E: Error> AddLocationToError for E {
 	}
 }
 
+impl<'a> fmt::Display for Location<'a> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		if let Some(file) = self.file.as_ref() {
+			write!(f, "{}", file.display())?;
+		}
+		if let Some(line) = self.line {
+			write!(f, ":{}", line)?;
+		}
+		Ok(())
+	}
+}
+
 impl<T: fmt::Display> fmt::Display for ErrorWithLocation<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		if self.file.is_some() || self.line.is_some() {
-			if let Some(file) = self.file.as_ref() {
-				write!(f, "{}", file.display())?;
-			}
-			if let Some(line) = self.line {
-				write!(f, ":{}", line)?;
-			}
-			write!(f, ": ")?;
+		if self.location() != Location::UNKNOWN {
+			write!(f, "{}: ", self.location())?;
 		}
 		write!(f, "{}", self.error)
 	}
 }
 
 impl<T: Error> Error for ErrorWithLocation<T> {}
-
-impl<A> ErrorWithLocation<A> {
-	/// Convert one error type to another, while keeping the location
-	/// information.
-	pub fn convert<B: From<A>>(self) -> ErrorWithLocation<B> {
-		ErrorWithLocation {
-			file: self.file,
-			line: self.line,
-			error: From::from(self.error),
-		}
-	}
-}
 
 impl<T: Error + Send + Sync + 'static> From<ErrorWithLocation<T>> for std::io::Error {
 	fn from(src: ErrorWithLocation<T>) -> std::io::Error {
