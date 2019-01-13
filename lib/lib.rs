@@ -38,7 +38,7 @@
 //!
 //! - **A 'build queue'**
 //!
-//!   [`BuildQueue`](queue::BuildQueue) can track tasks and their dependencies,
+//!   [`BuildQueue`][queue::BuildQueue] can track tasks and their dependencies,
 //!   and will tell you which tasks need to be run in what order.
 //!
 //! - **Reading of `mtime`s**
