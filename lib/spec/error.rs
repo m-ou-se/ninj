@@ -1,76 +1,21 @@
-//! Errors.
+//! Errors that can occur while reading or parsing `build.ninja` files.
 
+use crate::error::ErrorWithLocation;
 use raw_string::RawString;
-use std;
-
-/// A line in a file: The place where something went srong.
-#[derive(Debug)]
-pub struct Location<'a> {
-	pub file: &'a std::path::Path,
-	pub line: i32,
-}
-
-/// An error which happened at a specific line in some file.
-#[derive(Debug)]
-pub struct ErrorWithLocation<T> {
-	pub file: String,
-	pub line: i32,
-	pub error: T,
-}
-
-impl<'a> Location<'a> {
-	/// Create an error containing location information.
-	pub fn make_error<E>(&self, error: E) -> ErrorWithLocation<E> {
-		ErrorWithLocation {
-			file: self.file.to_string_lossy().into_owned(),
-			line: self.line,
-			error,
-		}
-	}
-	/// Add location information to a `Result`, if it contains an error.
-	pub fn map_error<T, E>(&self, result: Result<T, E>) -> Result<T, ErrorWithLocation<E>> {
-		result.map_err(|e| self.make_error(e))
-	}
-}
-
-impl<T: std::fmt::Display> std::fmt::Display for ErrorWithLocation<T> {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		if !self.file.is_empty() || self.line != 0 {
-			write!(f, "{}", self.file)?;
-			if self.line != 0 {
-				write!(f, ":{}", self.line)?;
-			}
-			write!(f, ": ")?;
-		}
-		write!(f, "{}", self.error)
-	}
-}
-
-impl<T: std::fmt::Display + std::fmt::Debug> std::error::Error for ErrorWithLocation<T> {}
-
-impl<A> ErrorWithLocation<A> {
-	/// Convert one error type to another, while keeping the location
-	/// information.
-	pub fn convert<B: From<A>>(self) -> ErrorWithLocation<B> {
-		ErrorWithLocation {
-			file: self.file,
-			line: self.line,
-			error: From::from(self.error),
-		}
-	}
-}
+use std::error::Error;
+use std::fmt;
 
 /// The error when an invalid `$`-escape sequence is found.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InvalidEscape;
 
-impl std::fmt::Display for InvalidEscape {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for InvalidEscape {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		ParseError::InvalidEscape.fmt(f)
 	}
 }
 
-impl std::error::Error for InvalidEscape {}
+impl Error for InvalidEscape {}
 
 /// A parsing error.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -86,8 +31,8 @@ pub enum ParseError {
 	InvalidEscape,
 }
 
-impl std::fmt::Display for ParseError {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for ParseError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		use self::ParseError::*;
 		write!(
 			f,
@@ -109,7 +54,7 @@ impl std::fmt::Display for ParseError {
 	}
 }
 
-impl std::error::Error for ParseError {}
+impl Error for ParseError {}
 
 impl From<InvalidEscape> for ParseError {
 	fn from(_: InvalidEscape) -> ParseError {
@@ -129,8 +74,8 @@ pub struct ExpansionError {
 	pub cycle: Box<[String]>,
 }
 
-impl std::fmt::Display for ExpansionError {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for ExpansionError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "Cycle in variable expansion: ")?;
 		for var in self.cycle.iter().rev() {
 			write!(f, "{} -> ", var)?
@@ -180,8 +125,8 @@ pub enum ReadError {
 	},
 }
 
-impl std::fmt::Display for ReadError {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for ReadError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			ReadError::ParseError(e) => write!(f, "{}", e),
 			ReadError::UndefinedRule(n) => write!(f, "Undefined rule name: {}", n),
@@ -206,8 +151,8 @@ impl std::fmt::Display for ReadError {
 	}
 }
 
-impl std::error::Error for ReadError {
-	fn cause(&self) -> Option<&std::error::Error> {
+impl Error for ReadError {
+	fn cause(&self) -> Option<&Error> {
 		match self {
 			ReadError::IoError { error, .. } => Some(error),
 			_ => None,
@@ -254,11 +199,5 @@ impl From<ErrorWithLocation<ExpansionError>> for ErrorWithLocation<ReadError> {
 impl From<ErrorWithLocation<std::str::Utf8Error>> for ErrorWithLocation<ReadError> {
 	fn from(src: ErrorWithLocation<std::str::Utf8Error>) -> Self {
 		src.convert()
-	}
-}
-
-impl<T: std::error::Error + Send + Sync + 'static> From<ErrorWithLocation<T>> for std::io::Error {
-	fn from(src: ErrorWithLocation<T>) -> std::io::Error {
-		std::io::Error::new(std::io::ErrorKind::Other, src)
 	}
 }

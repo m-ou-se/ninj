@@ -1,8 +1,9 @@
-use super::error::{ErrorWithLocation, ReadError};
+use super::error::ReadError;
 use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
 use super::parse::{Parser, Statement, Variable};
 use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, FileScope, Rule, VarScope};
 use super::{BuildCommand, BuildRule, DepStyle, Spec};
+use crate::error::{AddLocationToError, AddLocationToResult, ErrorWithLocation, Location};
 use pile::Pile;
 use raw_string::{RawStr, RawString};
 use std::borrow::ToOwned;
@@ -28,11 +29,7 @@ fn read_bytes<'a>(file_name: &Path) -> Result<Vec<u8>, ReadError> {
 /// Parses the file, including any included and subninja'd files, and resolves
 /// all rules and variables, resulting in a `Spec`.
 pub fn read(file_name: &Path) -> Result<Spec, ErrorWithLocation<ReadError>> {
-	let source = read_bytes(file_name).map_err(|error| ErrorWithLocation {
-		file: String::new(),
-		line: 0,
-		error,
-	})?;
+	let source = read_bytes(file_name).err_at(Location::UNKNOWN)?;
 	read_from(file_name, &source)
 }
 
@@ -79,12 +76,12 @@ fn read_into<'a: 'p, 'p>(
 		let loc = parser.location();
 		match statement {
 			Statement::Variable { name, value } => {
-				let value = loc.map_error(expand_str(value, scope))?;
+				let value = expand_str(value, scope).err_at(loc)?;
 				scope.vars.push(ExpandedVar { name, value })
 			}
 			Statement::Rule { name } => {
 				if scope.rules.iter().any(|rule| rule.name == name) {
-					return Err(loc.make_error(ReadError::DuplicateRule(name.to_string())));
+					return Err(ReadError::DuplicateRule(name.to_string()).at(loc));
 				}
 				let mut vars = Vec::new();
 				while let Some(var) = parser.next_variable()? {
@@ -93,9 +90,9 @@ fn read_into<'a: 'p, 'p>(
 						"rspfile" | "rspfile_content" | "generator" | "restat" | "pool" => true,
 						_ => false,
 					} {
-						return Err(parser
-							.location()
-							.make_error(ReadError::UnknownVariable(var.name.to_string())));
+						return Err(
+							ReadError::UnknownVariable(var.name.to_string()).at(parser.location())
+						);
 					}
 					vars.push(var);
 				}
@@ -103,28 +100,28 @@ fn read_into<'a: 'p, 'p>(
 			}
 			Statement::Pool { name } => {
 				if pools.iter().any(|(n, _)| n == name) {
-					return Err(loc.make_error(ReadError::DuplicatePool(name.to_string())));
+					return Err(ReadError::DuplicatePool(name.to_string()).at(loc));
 				}
 				let mut depth = None;
 				while let Some(Variable { name, value }) = parser.next_variable()? {
 					let loc = parser.location();
 					if name != "depth" {
-						return Err(loc.make_error(ReadError::UnknownVariable(name.to_string())));
+						return Err(ReadError::UnknownVariable(name.to_string()).at(loc));
 					}
 					// Expand the value.
-					let value = loc.map_error(expand_str(value, scope))?;
+					let value = expand_str(value, scope).err_at(loc)?;
 					// Parse the value as an u32.
 					depth = Some(
 						from_utf8(value.as_bytes())
 							.ok()
 							.and_then(|s| s.parse().ok())
-							.ok_or_else(|| loc.make_error(ReadError::InvalidPoolDepth))?,
+							.ok_or_else(|| ReadError::InvalidPoolDepth.at(loc))?,
 					);
 				}
 				if let Some(depth) = depth {
 					pools.push((name.to_owned(), depth));
 				} else {
-					return Err(parser.location().make_error(ReadError::ExpectedPoolDepth));
+					return Err(ReadError::ExpectedPoolDepth.at(parser.location()));
 				}
 			}
 			Statement::Build {
@@ -139,7 +136,7 @@ fn read_into<'a: 'p, 'p>(
 				while let Some(Variable { name, value }) = parser.next_variable()? {
 					vars.push(ExpandedVar {
 						name,
-						value: parser.location().map_error(expand_str(value, scope))?,
+						value: expand_str(value, scope).err_at(parser.location())?,
 					});
 				}
 
@@ -149,23 +146,20 @@ fn read_into<'a: 'p, 'p>(
 					build_vars: &vars,
 				};
 
-				let make_error = |e| loc.make_error(e);
-
 				// And expand the input and output paths with it.
 				let mut outputs =
 					Vec::with_capacity(explicit_outputs.len() + implicit_outputs.len());
 				let mut inputs = Vec::with_capacity(explicit_deps.len() + implicit_deps.len());
-				expand_strs_into(&explicit_outputs, &build_scope, &mut outputs)
-					.map_err(make_error)?;
-				expand_strs_into(&explicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
+				expand_strs_into(&explicit_outputs, &build_scope, &mut outputs).err_at(loc)?;
+				expand_strs_into(&explicit_deps, &build_scope, &mut inputs).err_at(loc)?;
 
 				let command = if rule_name == "phony" {
 					None
 				} else {
 					// Look up the rule in the current scope.
-					let rule = scope.lookup_rule(rule_name).ok_or_else(|| {
-						loc.make_error(ReadError::UndefinedRule(rule_name.to_string()))
-					})?;
+					let rule = scope
+						.lookup_rule(rule_name)
+						.ok_or_else(|| ReadError::UndefinedRule(rule_name.to_string()).at(loc))?;
 
 					// Bring $in, $out, and the rule variables into scope.
 					let build_rule_scope = BuildRuleScope {
@@ -175,7 +169,7 @@ fn read_into<'a: 'p, 'p>(
 						outputs: &outputs,
 					};
 
-					let expand_var = |name| expand_var(name, &build_rule_scope).map_err(make_error);
+					let expand_var = |name| expand_var(name, &build_rule_scope).err_at(loc);
 
 					// And expand the special variables with it:
 
@@ -187,7 +181,7 @@ fn read_into<'a: 'p, 'p>(
 						let (n, d) = pools
 							.iter()
 							.find(|(name, _)| name.as_bytes() == pool.as_bytes())
-							.ok_or_else(|| loc.make_error(ReadError::UndefinedPool(pool)))?;
+							.ok_or_else(|| ReadError::UndefinedPool(pool).at(loc))?;
 						(n.clone(), Some(*d))
 					};
 
@@ -212,11 +206,10 @@ fn read_into<'a: 'p, 'p>(
 					})
 				};
 
-				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs)
-					.map_err(make_error)?;
-				expand_strs_into(&implicit_deps, &build_scope, &mut inputs).map_err(make_error)?;
+				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs).err_at(loc)?;
+				expand_strs_into(&implicit_deps, &build_scope, &mut inputs).err_at(loc)?;
 
-				let mut order_deps = expand_strs(&order_deps, &build_scope).map_err(make_error)?;
+				let mut order_deps = expand_strs(&order_deps, &build_scope).err_at(loc)?;
 
 				for path in outputs
 					.iter_mut()
@@ -236,14 +229,13 @@ fn read_into<'a: 'p, 'p>(
 			Statement::Default { paths } => {
 				spec.default_targets.reserve(paths.len());
 				for p in paths {
-					spec.default_targets
-						.push(loc.map_error(expand_str(p, scope))?);
+					spec.default_targets.push(expand_str(p, scope).err_at(loc)?);
 				}
 			}
 			Statement::Include { path } => {
-				let path = loc.map_error(expand_str(path, scope))?;
-				let path = loc.map_error(path.to_path())?;
-				let source = RawStr::from_bytes(pile.add(loc.map_error(read_bytes(&path))?));
+				let path = expand_str(path, scope).err_at(loc)?;
+				let path = path.to_path().err_at(loc)?;
+				let source = RawStr::from_bytes(pile.add(read_bytes(&path).err_at(loc)?));
 				read_into(
 					&file_name.with_file_name(path),
 					source,
@@ -254,9 +246,9 @@ fn read_into<'a: 'p, 'p>(
 				)?;
 			}
 			Statement::SubNinja { path } => {
-				let path = loc.map_error(expand_str(path, scope))?;
-				let path = loc.map_error(path.to_path())?;
-				let source = loc.map_error(read_bytes(&path))?;
+				let path = expand_str(path, scope).err_at(loc)?;
+				let path = path.to_path().err_at(loc)?;
+				let source = read_bytes(&path).err_at(loc)?;
 				read_into(
 					&file_name.with_file_name(path),
 					RawStr::from_bytes(&source),

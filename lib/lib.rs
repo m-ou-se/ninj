@@ -30,6 +30,12 @@
 //!
 //! Other than file formats, this crate also provides the following utilities:
 //!
+//! - **Error handling**
+//!
+//!   [`ErrorWithLocation`][error::ErrorWithLocation] adds location information
+//!   (file name and line number) to an [`Error`][std::error::Error], so that
+//!   the user can know where something went wrong while reading/parsing a file.
+//!
 //! - **A 'build queue'**
 //!
 //!   [`BuildQueue`](queue::BuildQueue) can track tasks and their dependencies,
@@ -50,6 +56,7 @@
 pub mod buildlog;
 pub mod depfile;
 pub mod deplog;
+pub mod error;
 pub mod mtime;
 pub mod outdated;
 pub mod queue;

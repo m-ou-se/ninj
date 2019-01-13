@@ -1,17 +1,19 @@
 //! The parser.
 
 use super::eat::{eat_identifier, eat_path, eat_paths, eat_whitespace};
-use super::error::{ErrorWithLocation, Location, ParseError};
+use super::error::ParseError;
 use super::expand::check_escapes;
+use crate::error::{AddLocationToError, AddLocationToResult, ErrorWithLocation, Location};
 use raw_string::RawStr;
+use std::num::NonZeroU32;
 use std::path::Path;
 
 /// A `ninja.build` file parser.
 pub struct Parser<'a, 'b> {
 	file_name: &'b Path,
 	source: &'a RawStr,
-	line_num: i32,
-	escaped_lines: i32,
+	line_num: u32,
+	escaped_lines: u32,
 }
 
 /// A variable definition, with a name and an (unexpanded) definition.
@@ -71,8 +73,8 @@ impl<'a, 'b> Parser<'a, 'b> {
 	/// Used for error reporting.
 	pub fn location(&self) -> Location<'b> {
 		Location {
-			file: self.file_name,
-			line: self.line_num,
+			file: Some(self.file_name),
+			line: NonZeroU32::new(self.line_num),
 		}
 	}
 
@@ -139,14 +141,14 @@ impl<'a, 'b> Parser<'a, 'b> {
 		if self.next_indent() > 0 {
 			if let Some(mut line) = self.next_line() {
 				let name = eat_identifier(&mut line)
-					.ok_or_else(|| self.location().make_error(ParseError::ExpectedVarDef))?;
+					.ok_or_else(|| ParseError::ExpectedVarDef.at(self.location()))?;
 				eat_whitespace(&mut line);
 				if let Some((b'=', mut value)) = line.split_first() {
 					eat_whitespace(&mut value);
-					check_escapes(value).map_err(|e| self.location().make_error(e))?;
+					check_escapes(value).err_at(self.location())?;
 					return Ok(Some(Variable { name, value }));
 				} else {
-					return Err(self.location().make_error(ParseError::ExpectedVarDef));
+					return Err(ParseError::ExpectedVarDef.at(self.location()));
 				}
 			}
 		}
@@ -163,7 +165,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 	) -> Result<Option<Statement<'a>>, ErrorWithLocation<ParseError>> {
 		let mut line = loop {
 			if self.next_indent() != 0 {
-				return Err(self.location().make_error(ParseError::UnexpectedIndent));
+				return Err(ParseError::UnexpectedIndent.at(self.location()));
 			}
 
 			let line = match self.next_line() {
@@ -177,7 +179,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 		};
 
 		let ident = eat_identifier(&mut line)
-			.ok_or_else(|| self.location().make_error(ParseError::ExpectedStatement))?;
+			.ok_or_else(|| ParseError::ExpectedStatement.at(self.location()))?;
 
 		eat_whitespace(&mut line);
 
@@ -185,40 +187,40 @@ impl<'a, 'b> Parser<'a, 'b> {
 
 		Ok(Some(match ident {
 			"build" => {
-				let (explicit_outputs, x) = loc.map_error(eat_paths(&mut line, b"|:"))?;
+				let (explicit_outputs, x) = eat_paths(&mut line, b"|:").err_at(loc)?;
 				let (implicit_outputs, x) = if x == Some(b'|') {
 					eat_whitespace(&mut line);
-					loc.map_error(eat_paths(&mut line, b":"))?
+					eat_paths(&mut line, b":").err_at(loc)?
 				} else {
 					(Vec::new(), x)
 				};
 
 				if x != Some(b':') {
-					return Err(loc.make_error(ParseError::ExpectedColon));
+					return Err(ParseError::ExpectedColon.at(loc));
 				}
 
 				eat_whitespace(&mut line);
 				let rule_name = eat_identifier(&mut line)
-					.ok_or_else(|| loc.make_error(ParseError::ExpectedRuleName))?;
+					.ok_or_else(|| ParseError::ExpectedRuleName.at(loc))?;
 
 				eat_whitespace(&mut line);
-				let (explicit_deps, x) = loc.map_error(eat_paths(&mut line, b"|"))?;
+				let (explicit_deps, x) = eat_paths(&mut line, b"|").err_at(loc)?;
 				let (implicit_deps, x) = if x == Some(b'|') && !line.starts_with("|") {
 					eat_whitespace(&mut line);
-					loc.map_error(eat_paths(&mut line, b"|"))?
+					eat_paths(&mut line, b"|").err_at(loc)?
 				} else {
 					(Vec::new(), x)
 				};
 				let order_deps = if x == Some(b'|') && line.starts_with("|") {
 					line = &line[1..];
 					eat_whitespace(&mut line);
-					loc.map_error(eat_paths(&mut line, b""))?.0
+					eat_paths(&mut line, b"").err_at(loc)?.0
 				} else {
 					Vec::new()
 				};
 
 				if !line.is_empty() {
-					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
+					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}
 
 				Statement::Build {
@@ -231,25 +233,25 @@ impl<'a, 'b> Parser<'a, 'b> {
 				}
 			}
 			"rule" => {
-				let name = eat_identifier(&mut line)
-					.ok_or_else(|| loc.make_error(ParseError::ExpectedName))?;
+				let name =
+					eat_identifier(&mut line).ok_or_else(|| ParseError::ExpectedName.at(loc))?;
 				if !line.is_empty() {
-					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
+					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}
 				Statement::Rule { name }
 			}
 			"pool" => {
-				let name = eat_identifier(&mut line)
-					.ok_or_else(|| loc.make_error(ParseError::ExpectedName))?;
+				let name =
+					eat_identifier(&mut line).ok_or_else(|| ParseError::ExpectedName.at(loc))?;
 				if !line.is_empty() {
-					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
+					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}
 				Statement::Pool { name }
 			}
 			"include" | "subninja" => {
-				let path = loc.map_error(eat_path(&mut line))?;
+				let path = eat_path(&mut line).err_at(loc)?;
 				if !line.is_empty() {
-					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
+					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}
 				if ident == "include" {
 					Statement::Include { path }
@@ -258,9 +260,9 @@ impl<'a, 'b> Parser<'a, 'b> {
 				}
 			}
 			"default" => {
-				let paths = loc.map_error(eat_paths(&mut line, b""))?.0;
+				let paths = eat_paths(&mut line, b"").err_at(loc)?.0;
 				if !line.is_empty() {
-					return Err(loc.make_error(ParseError::ExpectedEndOfLine));
+					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}
 				Statement::Default { paths }
 			}
@@ -272,7 +274,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 						value,
 					}
 				} else {
-					return Err(loc.make_error(ParseError::ExpectedStatement));
+					return Err(ParseError::ExpectedStatement.at(loc));
 				}
 			}
 		}))
