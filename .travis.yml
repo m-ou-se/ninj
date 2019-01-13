@@ -14,3 +14,4 @@ matrix:
         - cargo build
         - cargo test
   fast_finish: true
+cache: cargo
