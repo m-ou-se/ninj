@@ -152,7 +152,7 @@ impl fmt::Display for ReadError {
 }
 
 impl Error for ReadError {
-	fn cause(&self) -> Option<&Error> {
+	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			ReadError::IoError { error, .. } => Some(error),
 			_ => None,
