@@ -1,9 +1,16 @@
 language: rust
+script:
 matrix:
   include:
     - rust: stable
+      install:
+        - rustup component add rustfmt
+      script:
+        - cargo build
+        - cargo test
+        - cargo fmt -- --check
     - rust: nightly
+      script:
+        - cargo build
+        - cargo test
   fast_finish: true
-script:
-  - cargo build
-  - cargo test
