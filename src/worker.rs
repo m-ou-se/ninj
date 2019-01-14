@@ -55,7 +55,7 @@ impl<'a> Worker<'a> {
 			sleep,
 			dep_log,
 			build_log,
-			start_time
+			start_time,
 		} = self;
 		let log = format!("ninj::worker-{}", id);
 		let mut lock = queue.lock();
@@ -144,7 +144,12 @@ impl<'a> Worker<'a> {
 					restat = None;
 				}
 			}
-			build_log.lock().unwrap().add_entry(&spec.build_rules[task], start_time, worker_start_time, Instant::now());
+			build_log.lock().unwrap().add_entry(
+				&spec.build_rules[task],
+				start_time,
+				worker_start_time,
+				Instant::now(),
+			);
 			lock = queue.lock();
 			lock.complete_task(task, restat);
 		}

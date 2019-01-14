@@ -6,9 +6,9 @@ use raw_string::{RawStr, RawString};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Error, ErrorKind, Write};
-use std::path::Path;
-use std::time::{Instant, Duration};
 use std::iter::FromIterator;
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 mod murmurhash;
 
@@ -37,37 +37,56 @@ impl BuildLog {
 		}
 	}
 
-	pub fn estimated_total_task_time(&self, output: RawString, _command: RawString) -> Option<Duration> {
-		match self.entries.get(&output) {
-			Some(entry) => Some(Duration::from_millis((entry.end_time_ms - entry.start_time_ms).into())),
-			None => {
+	pub fn estimated_total_task_time(
+		&self,
+		output: &RawString,
+		_command: &RawString,
+	) -> Option<Duration> {
+		self.entries
+			.get(output)
+			.or_else(|| {
 				// TODO: Search entries for command_hash equal to murmur_hash_64a(_command)
 				None
-			},
-		}
+			})
+			.map(|entry| Duration::from_millis((entry.end_time_ms - entry.start_time_ms).into()))
 	}
 
 	pub fn average_historic_task_time(&self) -> Option<Duration> {
 		if self.entries.is_empty() {
 			None
 		} else {
-			let mut sum_ms = 0;
-			for (_output, entry) in self.entries.iter() {
-				sum_ms += (entry.end_time_ms - entry.start_time_ms) as u64;
-			}
+			let sum_ms: u64 = self
+				.entries
+				.iter()
+				.map(|(_, entry)| entry.end_time_ms.saturating_sub(entry.start_time_ms) as u64)
+				.sum();
 			Some(Duration::from_millis(sum_ms / self.entries.len() as u64))
 		}
 	}
 
-	pub fn add_entry(&mut self, rule: &BuildRule, build_starttime: Instant, starttime: Instant, endtime: Instant) {
+	pub fn add_entry(
+		&mut self,
+		rule: &BuildRule,
+		build_starttime: Instant,
+		starttime: Instant,
+		endtime: Instant,
+	) {
+		assert!(
+			starttime >= build_starttime,
+			"Job started before build started!"
+		);
+		assert!(endtime >= starttime, "Job ended before job started!");
 		let command = &rule.command.as_ref().expect("Got phony rule").command;
 		for output in &rule.outputs {
-			self.entries.insert(output.clone(), Entry {
-				start_time_ms: (starttime - build_starttime).as_millis() as u32,
-				end_time_ms:   (endtime - build_starttime).as_millis() as u32,
-				restat_mtime:  None,
-				command_hash:  murmur_hash_64a(command.as_bytes()),
-			});
+			self.entries.insert(
+				output.clone(),
+				Entry {
+					start_time_ms: (starttime - build_starttime).as_millis() as u32,
+					end_time_ms: (endtime - build_starttime).as_millis() as u32,
+					restat_mtime: None,
+					command_hash: murmur_hash_64a(command.as_bytes()),
+				},
+			);
 		}
 	}
 
@@ -90,20 +109,24 @@ impl BuildLog {
 	pub fn write_to(&self, file: File) -> Result<(), Error> {
 		let mut file = BufWriter::new(file);
 
-		file.write(b"# ninja log v5\n")?;
+		file.write_all(b"# ninja log v5\n")?;
 
-		// Write entries in order of finishing time. Note that this removes all
+		// Write entries in order of finishing time. Note that this BuildLog does not
+		// contain any 'dead' entries like Ninja does, so writing it to file removes all
 		// 'dead' entries immediately, while ninja would only do that later.
 
 		let mut entries = Vec::from_iter(&self.entries);
-		entries.sort_by(|(_, left), (_, right)| right.end_time_ms.cmp(&left.end_time_ms));
-		for (output, entry) in entries {
-			write!(file, "{}\t{}\t{}\t{}\t{:x}\n",
+		entries.sort_by_key(|(_, entry)| entry.end_time_ms);
+		for (output, entry) in entries.iter().rev() {
+			writeln!(
+				file,
+				"{}\t{}\t{}\t{}\t{:x}",
 				entry.start_time_ms,
 				entry.end_time_ms,
 				entry.restat_mtime.map_or(0, Timestamp::to_nanos),
 				output,
-				entry.command_hash)?;
+				entry.command_hash
+			)?;
 		}
 
 		Ok(())

@@ -101,11 +101,13 @@ fn main() {
 
 	let target_to_rule = spec.make_index();
 
-	let build_log = Mutex::new(BuildLog::read(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
-		error!("Error while reading .ninja_log: {}", e);
-		error!("Not using .ninja_log.");
-		BuildLog::new()
-	}));
+	let build_log = Mutex::new(
+		BuildLog::read(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
+			error!("Error while reading .ninja_log: {}", e);
+			error!("Not using .ninja_log.");
+			BuildLog::new()
+		}),
+	);
 
 	let dep_log = DepLogMut::open(spec.build_dir().join(".ninja_deps")).unwrap_or_else(|e| {
 		error!("Error while reading .ninja_deps: {}", e);
@@ -190,13 +192,24 @@ fn main() {
 		if opt.debug {
 			debug!("Regular output disabled because debug messages are enabled.");
 		} else {
-			show_build_status(start_time, &status, &queue, &spec, &build_log, opt.sleep_run);
+			show_build_status(
+				start_time,
+				&status,
+				&queue,
+				&spec,
+				&build_log,
+				opt.sleep_run,
+			);
 		}
 	})
 	.unwrap();
 
-	build_log.lock().unwrap().write(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
-		eprintln!("Unable to store logfile: {}", e);
-		exit(1);
-	});
+	build_log
+		.into_inner()
+		.unwrap()
+		.write(spec.build_dir().join(".ninja_log"))
+		.unwrap_or_else(|e| {
+			eprintln!("Unable to store logfile: {}", e);
+			exit(1);
+		});
 }

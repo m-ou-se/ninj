@@ -234,7 +234,8 @@ impl BuildQueue {
 		self.next_at(Instant::now())
 	}
 
-	/// Like next(), returns the next thing to do, but notes it as having started at the given time instead of now.
+	/// Like next(), returns the next thing to do, but notes it as having
+	/// started at the given time instead of now.
 	pub fn next_at(&mut self, start_time: Instant) -> Option<usize> {
 		let next = self.ready.pop();
 		if let Some(next) = next {
@@ -246,7 +247,7 @@ impl BuildQueue {
 					outdated: true
 				}
 			);
-			self.tasks[next].status = TaskStatus::Running {start_time};
+			self.tasks[next].status = TaskStatus::Running { start_time };
 			self.n_left -= 1;
 		}
 		next
@@ -268,7 +269,8 @@ impl BuildQueue {
 		self.complete_task_at(task, restat, Instant::now())
 	}
 
-	/// Like complete_task, marks a task as completed, but notes it as having finished at the given time instead of now.
+	/// Like complete_task, marks a task as completed, but notes it as having
+	/// finished at the given time instead of now.
 	pub fn complete_task_at(
 		&mut self,
 		task: usize,

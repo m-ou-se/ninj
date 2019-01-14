@@ -1,6 +1,6 @@
-use chrono::Local;
 use crate::timeformat::MinSec;
 use crate::worker::StatusUpdater;
+use chrono::Local;
 use ninj::buildlog::BuildLog;
 use ninj::queue::{AsyncBuildQueue, TaskStatus};
 use ninj::spec::Spec;
@@ -67,24 +67,32 @@ impl BuildStatusInner {
 	}
 
 	fn all_workers_done(&self) -> bool {
-		self.workers.iter().all(|worker| *worker == WorkerStatus::Done)
+		self.workers
+			.iter()
+			.all(|worker| *worker == WorkerStatus::Done)
 	}
 
 	fn all_workers_done_or_idle(&self) -> bool {
-		self.workers.iter().all(|worker| *worker == WorkerStatus::Done || *worker == WorkerStatus::Idle)
+		self.workers
+			.iter()
+			.all(|worker| *worker == WorkerStatus::Done || *worker == WorkerStatus::Idle)
 	}
 }
 
-fn estimated_total_task_time(spec: &Spec, task: usize, build_log: &std::sync::MutexGuard<BuildLog>) -> Option<Duration> {
+fn estimated_total_task_time(
+	spec: &Spec,
+	task: usize,
+	build_log: &std::sync::MutexGuard<BuildLog>,
+) -> Option<Duration> {
 	let rule = &spec.build_rules[task];
 	let command = &rule.command.as_ref().expect("Got phony task").command;
 
-	if rule.outputs.len() == 0 {
-		build_log.average_historic_task_time()
-	} else {
-		let output = &rule.outputs[0];
-		build_log.estimated_total_task_time(output.clone(), command.clone()).or_else(||{ build_log.average_historic_task_time() })
+	if let Some(output) = rule.outputs.first() {
+		if let Some(estimate) = build_log.estimated_total_task_time(output, command) {
+			return Some(estimate);
+		}
 	}
+	build_log.average_historic_task_time()
 }
 
 pub fn show_build_status(
@@ -153,36 +161,46 @@ pub fn show_build_status(
 				match worker {
 					WorkerStatus::Starting | WorkerStatus::Idle => {
 						let next = queuestate.next_at(simulated_time);
-						buildstate.set_status(i, match next {
-							Some(task) => WorkerStatus::Running{task},
-							None => WorkerStatus::Idle,
-						});
+						buildstate.set_status(
+							i,
+							match next {
+								Some(task) => WorkerStatus::Running { task },
+								None => WorkerStatus::Idle,
+							},
+						);
 					}
 					_ => {}
 				}
 			}
 
 			// Find the job with the lowest remaining time
-			let earliest_remaining_job = match buildstate.workers.iter()
+			let (worker, task, remainingtime) = match buildstate
+				.workers
+				.iter()
 				.enumerate()
-				.flat_map(|(i, worker)| {
-					match worker {
-						WorkerStatus::Running{task, ..} => {
-							let taskstatus = queuestate.get_task_status(*task);
-							match taskstatus {
-								TaskStatus::Running{start_time, ..} => {
-									let runtime = if simulated_time > start_time { simulated_time - start_time } else { Duration::from_millis(0) };
-									match estimated_total_task_time(spec, *task, &build_log.lock().unwrap()) {
-										Some(time) => Some((i, task, time.checked_sub(runtime).unwrap_or(Duration::from_millis(0)))),
-										None => None,
-									}
-								},
-								TaskStatus::Finished{..} => Some((i, task, Duration::from_millis(0))),
-								_ => unreachable!(),
+				.flat_map(|(i, worker)| match worker {
+					WorkerStatus::Running { task, .. } => match queuestate.get_task_status(*task) {
+						TaskStatus::Running { start_time, .. } => {
+							let runtime = if simulated_time > start_time {
+								simulated_time - start_time
+							} else {
+								Duration::from_millis(0)
+							};
+							match estimated_total_task_time(spec, *task, &build_log.lock().unwrap())
+							{
+								Some(time) => Some((
+									i,
+									task,
+									time.checked_sub(runtime)
+										.unwrap_or(Duration::from_millis(0)),
+								)),
+								None => None,
 							}
-						},
-						_ => None,
-					}
+						}
+						TaskStatus::Finished { .. } => Some((i, task, Duration::from_millis(0))),
+						_ => unreachable!(),
+					},
+					_ => None,
 				})
 				.min_by_key(|&(_, _, time)| time)
 			{
@@ -194,39 +212,52 @@ pub fn show_build_status(
 			};
 
 			// Pass that time
-			simulated_time += earliest_remaining_job.2;
+			simulated_time += remainingtime;
 
 			// Complete that task, if it isn't already Finished
-			match queuestate.get_task_status(*earliest_remaining_job.1) {
-				TaskStatus::Running{ .. } => {queuestate.complete_task_at(*earliest_remaining_job.1, None, simulated_time);},
-				TaskStatus::Finished{ .. } => {},
+			match queuestate.get_task_status(*task) {
+				TaskStatus::Running { .. } => {
+					queuestate.complete_task_at(*task, None, simulated_time);
+				}
+				TaskStatus::Finished { .. } => {}
 				_ => unreachable!(),
 			};
 
 			// Mark that worker as finished so it gets a new job next round
-			let i = earliest_remaining_job.0;
-			drop(earliest_remaining_job);
-			buildstate.workers[i] = WorkerStatus::Idle;
+			buildstate.workers[worker] = WorkerStatus::Idle;
 		}
 
 		let now = Instant::now();
 
 		if estimation_impossible || simulated_time <= now {
-			println!("Building for {}, estimating remaining time...\x1b[K\x1b[m",
-				MinSec::since(start_time));
+			println!(
+				"Building for {}, estimating remaining time...\x1b[K\x1b[m",
+				MinSec::since(start_time)
+			);
 		} else {
 			let remaining_duration = simulated_time - now;
-			let eta = TimeDuration::from_std(remaining_duration).map(|duration| Local::now() + duration);
+			let eta =
+				TimeDuration::from_std(remaining_duration).map(|duration| Local::now() + duration);
 			match eta {
 				Ok(eta) => {
-					let is_soon = eta.date() == Local::now().date() && remaining_duration < Duration::from_secs(8 * 3600);
-					let timeformat = if is_soon { "%H:%M:%S" } else { "%Y-%m-%d %H:%M:%S" };
-					println!("Building for {}, remaining time for build is {} (ETA {})\x1b[K\x1b[m",
-						MinSec::since(start_time), MinSec::from_duration(remaining_duration),
-						eta.format(timeformat));
-				},
-				_ => println!("Building for {}, remaining time is infinite...\x1b[K\x1b[m",
-						MinSec::since(start_time)),
+					let is_soon = eta.date() == Local::now().date()
+						&& remaining_duration < Duration::from_secs(8 * 3600);
+					let timeformat = if is_soon {
+						"%H:%M:%S"
+					} else {
+						"%Y-%m-%d %H:%M:%S"
+					};
+					println!(
+						"Building for {}, remaining time for build is {} (ETA {})\x1b[K\x1b[m",
+						MinSec::since(start_time),
+						MinSec::from_duration(remaining_duration),
+						eta.format(timeformat)
+					);
+				}
+				_ => println!(
+					"Building for {}, remaining time is infinite...\x1b[K\x1b[m",
+					MinSec::since(start_time)
+				),
 			}
 		}
 
