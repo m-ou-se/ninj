@@ -14,6 +14,11 @@ mod murmurhash;
 
 pub use self::murmurhash::murmur_hash_64a;
 
+fn as_millis(d: Duration) -> u32 {
+	const MILLIS_PER_SEC: u32 = 1_000;
+	d.as_secs() as u32 * MILLIS_PER_SEC + d.subsec_millis()
+}
+
 /// The latest entries for all targets in the build log.
 #[derive(Clone, Debug)]
 pub struct BuildLog {
@@ -81,8 +86,8 @@ impl BuildLog {
 			self.entries.insert(
 				output.clone(),
 				Entry {
-					start_time_ms: (starttime - build_starttime).as_millis() as u32,
-					end_time_ms: (endtime - build_starttime).as_millis() as u32,
+					start_time_ms: as_millis(starttime - build_starttime),
+					end_time_ms: as_millis(endtime - build_starttime),
 					restat_mtime: None,
 					command_hash: murmur_hash_64a(command.as_bytes()),
 				},
