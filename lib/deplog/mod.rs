@@ -164,7 +164,7 @@ impl DepLog {
 				let id = file.read_u32::<LE>()? as usize;
 
 				let mtime = if version < 4 {
-					file.read_u32::<LE>()? as u64 * 1_000_000_000 + 999_999_999
+					u64::from(file.read_u32::<LE>()?) * 1_000_000_000 + 999_999_999
 				} else {
 					file.read_u64::<LE>()?
 				};
@@ -259,17 +259,14 @@ impl DepLogMut {
 	fn insert_path(&mut self, path: RawString) -> Result<u32, Error> {
 		let entry = self.deps.records.entry(path);
 		let id = entry.index() as u32;
-		match entry {
-			IndexMapEntry::Vacant(entry) => {
-				let padding = (4 - entry.key().len() % 4) % 4;
-				let size = entry.key().len() as u32 + padding as u32 + 4;
-				self.file.write_u32::<LE>(size)?;
-				self.file.write_all(entry.key().as_bytes())?;
-				self.file.write_all(&b"\0\0\0"[..padding])?;
-				self.file.write_u32::<LE>(!id)?;
-				entry.insert(None);
-			}
-			_ => {}
+		if let IndexMapEntry::Vacant(entry) = entry {
+			let padding = (4 - entry.key().len() % 4) % 4;
+			let size = entry.key().len() as u32 + padding as u32 + 4;
+			self.file.write_u32::<LE>(size)?;
+			self.file.write_all(entry.key().as_bytes())?;
+			self.file.write_all(&b"\0\0\0"[..padding])?;
+			self.file.write_u32::<LE>(!id)?;
+			entry.insert(None);
 		}
 		Ok(id)
 	}

@@ -61,8 +61,8 @@ impl<'a, 'b> Parser<'a, 'b> {
 	/// The file name is only used in errors.
 	pub fn new(file_name: &'b Path, source: &'a RawStr) -> Self {
 		Parser {
-			file_name: file_name,
-			source: source,
+			file_name,
+			source,
 			line_num: 0,
 			escaped_lines: 0,
 		}

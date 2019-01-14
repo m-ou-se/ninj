@@ -75,7 +75,7 @@ pub fn check_outputs<'a, 'b>(
 			if oldest.map_or(true, |oldest| mtime < oldest) {
 				oldest = Some(mtime);
 			}
-			if rule.command.as_ref().map_or(true, |c| !c.deps.is_some()) {
+			if rule.command.as_ref().map_or(true, |c| c.deps.is_none()) {
 				// Don't even look up dependencies in de dependency log for
 				// targets that don't use extra dependencies anyway.
 				continue;

@@ -106,7 +106,7 @@ fn main() {
 		exit(1);
 	});
 
-	let targets = targets.into_iter().map(|target| {
+	let targets = targets.iter().map(|target| {
 		*target_to_rule.get(&target[..]).unwrap_or_else(|| {
 			error!("Unknown target {:?}", target);
 			exit(1);

@@ -13,7 +13,7 @@ use std::mem::replace;
 use std::path::Path;
 use std::str::from_utf8;
 
-fn read_bytes<'a>(file_name: &Path) -> Result<Vec<u8>, ReadError> {
+fn read_bytes(file_name: &Path) -> Result<Vec<u8>, ReadError> {
 	let mut bytes = Vec::new();
 	File::open(file_name)
 		.and_then(|f| BufReader::with_capacity(0x10000, f).read_to_end(&mut bytes))
