@@ -1,3 +1,4 @@
+use chrono::Local;
 use crate::timeformat::MinSec;
 use crate::worker::StatusUpdater;
 use ninj::buildlog::BuildLog;
@@ -5,6 +6,7 @@ use ninj::queue::{AsyncBuildQueue, TaskStatus};
 use ninj::spec::Spec;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
+use time::Duration as TimeDuration;
 
 #[derive(Debug, Clone, PartialEq)]
 enum WorkerStatus {
@@ -213,8 +215,19 @@ pub fn show_build_status(
 			println!("Building for {}, estimating remaining time...\x1b[K\x1b[m",
 				MinSec::since(start_time));
 		} else {
-			println!("Building for {}, remaining time for build is {}\x1b[K\x1b[m",
-				MinSec::since(start_time), MinSec::from_duration(simulated_time - now));
+			let remaining_duration = simulated_time - now;
+			let eta = TimeDuration::from_std(remaining_duration).map(|duration| Local::now() + duration);
+			match eta {
+				Ok(eta) => {
+					let is_soon = eta.date() == Local::now().date() && remaining_duration < Duration::from_secs(8 * 3600);
+					let timeformat = if is_soon { "%H:%M:%S" } else { "%Y-%m-%d %H:%M:%S" };
+					println!("Building for {}, remaining time for build is {} (ETA {})\x1b[K\x1b[m",
+						MinSec::since(start_time), MinSec::from_duration(remaining_duration),
+						eta.format(timeformat));
+				},
+				_ => println!("Building for {}, remaining time is infinite...\x1b[K\x1b[m",
+						MinSec::since(start_time)),
+			}
 		}
 
 		if build_is_done {
