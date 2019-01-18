@@ -14,11 +14,6 @@ mod murmurhash;
 
 pub use self::murmurhash::murmur_hash_64a;
 
-fn as_millis(d: Duration) -> u32 {
-	const MILLIS_PER_SEC: u32 = 1_000;
-	d.as_secs() as u32 * MILLIS_PER_SEC + d.subsec_millis()
-}
-
 /// The latest entries for all targets in the build log.
 #[derive(Clone, Debug)]
 pub struct BuildLog {
@@ -39,33 +34,6 @@ impl BuildLog {
 	pub fn new() -> BuildLog {
 		BuildLog {
 			entries: BTreeMap::new(),
-		}
-	}
-
-	pub fn estimated_total_task_time(
-		&self,
-		output: &RawString,
-		_command: &RawString,
-	) -> Option<Duration> {
-		self.entries
-			.get(output)
-			.or_else(|| {
-				// TODO: Search entries for command_hash equal to murmur_hash_64a(_command)
-				None
-			})
-			.map(|entry| Duration::from_millis((entry.end_time_ms - entry.start_time_ms).into()))
-	}
-
-	pub fn average_historic_task_time(&self) -> Option<Duration> {
-		if self.entries.is_empty() {
-			None
-		} else {
-			let sum_ms: u64 = self
-				.entries
-				.iter()
-				.map(|(_, entry)| entry.end_time_ms.saturating_sub(entry.start_time_ms) as u64)
-				.sum();
-			Some(Duration::from_millis(sum_ms / self.entries.len() as u64))
 		}
 	}
 
@@ -218,4 +186,8 @@ fn parse_hex(s: &RawStr) -> Option<u64> {
 	s.to_str()
 		.ok()
 		.and_then(|s| u64::from_str_radix(s, 16).ok())
+}
+
+fn as_millis(d: Duration) -> u32 {
+	d.as_secs() as u32 * 1000 + d.subsec_millis()
 }

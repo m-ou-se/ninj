@@ -185,7 +185,7 @@ fn main() {
 				sleep: opt.sleep_run,
 				dep_log: &dep_log,
 				build_log: &build_log,
-				start_time: start_time,
+				start_time,
 			};
 			scope.spawn(move |_| worker.run().unwrap());
 		}

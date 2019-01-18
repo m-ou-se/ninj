@@ -271,6 +271,10 @@ impl BuildQueue {
 
 	/// Like complete_task, marks a task as completed, but notes it as having
 	/// finished at the given time instead of now.
+	///
+	/// # Panics
+	/// Panics when `finish_time` is before the
+	/// [`start_time`][TaskStatus::Running::start_time] of the task.
 	pub fn complete_task_at(
 		&mut self,
 		task: usize,

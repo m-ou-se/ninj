@@ -1,6 +1,5 @@
 use crate::timeformat::MinSec;
 use crate::worker::StatusUpdater;
-use chrono::Local;
 use ninj::buildlog::BuildLog;
 use ninj::queue::{AsyncBuildQueue, TaskStatus};
 use ninj::spec::Spec;
@@ -66,7 +65,7 @@ impl BuildStatusInner {
 		self.dirty = true;
 	}
 
-	fn all_workers_done(&self) -> bool {
+	fn are_all_workers_done(&self) -> bool {
 		self.workers
 			.iter()
 			.all(|worker| *worker == WorkerStatus::Done)
@@ -78,15 +77,34 @@ fn estimated_total_task_time(
 	task: usize,
 	build_log: &std::sync::MutexGuard<BuildLog>,
 ) -> Option<Duration> {
-	let rule = &spec.build_rules[task];
-	let command = &rule.command.as_ref().expect("Got phony task").command;
-
-	if let Some(output) = rule.outputs.first() {
-		if let Some(estimate) = build_log.estimated_total_task_time(output, command) {
-			return Some(estimate);
+	if let Some(output) = &spec.build_rules[task].outputs.first() {
+		if let Some(estimate_ms) = build_log
+			.entries
+			.get(*output)
+			.or_else(|| {
+				// TODO: Find an entry where command_hash is equal to murmur_hash_64a(command)
+				None
+			})
+			.and_then(|entry| entry.end_time_ms.checked_sub(entry.start_time_ms))
+		{
+			return Some(Duration::from_millis(estimate_ms.into()));
 		}
 	}
-	build_log.average_historic_task_time()
+
+	// Failing to find an estimation for this particular job, we return
+	// the average job time.
+	if build_log.entries.is_empty() {
+		None
+	} else {
+		let sum_ms: u64 = build_log
+			.entries
+			.iter()
+			.map(|(_, entry)| u64::from(entry.end_time_ms.saturating_sub(entry.start_time_ms)))
+			.sum();
+		Some(Duration::from_millis(
+			sum_ms / build_log.entries.len() as u64,
+		))
+	}
 }
 
 pub fn show_build_status(
@@ -143,7 +161,7 @@ pub fn show_build_status(
 			}
 		}
 
-		let build_is_done = buildstate.all_workers_done();
+		let build_is_done = buildstate.are_all_workers_done();
 
 		// Compute remaining time for this build, by simulating a build.
 		let mut simulated_time = Instant::now();
@@ -168,7 +186,12 @@ pub fn show_build_status(
 			}
 
 			// All workers still idle? Nothing else to do, stop simulating
-			if buildstate.workers.iter().filter(|&w| *w != WorkerStatus::Idle).next().is_none() {
+			if buildstate
+				.workers
+				.iter()
+				.find(|&w| *w != WorkerStatus::Idle)
+				.is_none()
+			{
 				break;
 			}
 
@@ -235,11 +258,11 @@ pub fn show_build_status(
 			);
 		} else {
 			let remaining_duration = simulated_time - now;
-			let eta =
-				TimeDuration::from_std(remaining_duration).map(|duration| Local::now() + duration);
+			let eta = TimeDuration::from_std(remaining_duration)
+				.map(|duration| chrono::Local::now() + duration);
 			match eta {
 				Ok(eta) => {
-					let is_soon = eta.date() == Local::now().date()
+					let is_soon = eta.date() == chrono::Local::now().date()
 						&& remaining_duration < Duration::from_secs(8 * 3600);
 					let timeformat = if is_soon {
 						"%H:%M:%S"
