@@ -71,12 +71,6 @@ impl BuildStatusInner {
 			.iter()
 			.all(|worker| *worker == WorkerStatus::Done)
 	}
-
-	fn all_workers_done_or_idle(&self) -> bool {
-		self.workers
-			.iter()
-			.all(|worker| *worker == WorkerStatus::Done || *worker == WorkerStatus::Idle)
-	}
 }
 
 fn estimated_total_task_time(
@@ -154,7 +148,7 @@ pub fn show_build_status(
 		// Compute remaining time for this build, by simulating a build.
 		let mut simulated_time = Instant::now();
 		let mut estimation_impossible = false;
-		while !buildstate.all_workers_done_or_idle() {
+		loop {
 			// Give all simulated workers something to do
 			for i in 0..buildstate.workers.len() {
 				let worker = &buildstate.workers[i];
@@ -171,6 +165,11 @@ pub fn show_build_status(
 					}
 					_ => {}
 				}
+			}
+
+			// All workers still idle? Nothing else to do, stop simulating
+			if buildstate.workers.iter().filter(|&w| *w != WorkerStatus::Idle).next().is_none() {
+				break;
 			}
 
 			// Find the job with the lowest remaining time
