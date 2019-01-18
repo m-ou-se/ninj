@@ -81,10 +81,6 @@ fn estimated_total_task_time(
 		if let Some(estimate_ms) = build_log
 			.entries
 			.get(*output)
-			.or_else(|| {
-				// TODO: Find an entry where command_hash is equal to murmur_hash_64a(command)
-				None
-			})
 			.and_then(|entry| entry.end_time_ms.checked_sub(entry.start_time_ms))
 		{
 			return Some(Duration::from_millis(estimate_ms.into()));
