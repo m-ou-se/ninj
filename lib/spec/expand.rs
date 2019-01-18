@@ -121,7 +121,7 @@ fn expand_var_to<S: VarScope>(
 	result: &mut RawString,
 	prot: Option<&RecursionProtection>,
 ) -> Result<(), ExpansionError> {
-	Ok(match scope.lookup_var(var_name) {
+	match scope.lookup_var(var_name) {
 		Some(FoundVar::Expanded(e)) => result.push_str(e),
 		Some(FoundVar::Paths { paths, newlines }) => {
 			for (i, p) in paths.iter().enumerate() {
@@ -147,7 +147,8 @@ fn expand_var_to<S: VarScope>(
 			)?;
 		}
 		None => {}
-	})
+	}
+	Ok(())
 }
 
 fn expand_str_to<S: VarScope>(

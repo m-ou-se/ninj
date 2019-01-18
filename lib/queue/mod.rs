@@ -397,10 +397,8 @@ impl<'a> LockedAsyncBuildQueue<'a> {
 	/// Does not block.
 	pub fn next(&mut self) -> Option<usize> {
 		let next = self.queue.next();
-		if next.is_some() {
-			if self.queue.n_left == 0 {
-				self.condvar.notify_all();
-			}
+		if next.is_some() && self.queue.n_left == 0 {
+			self.condvar.notify_all();
 		}
 		next
 	}
