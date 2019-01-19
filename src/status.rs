@@ -1,3 +1,5 @@
+mod progressbar;
+
 use crate::timeformat::MinSec;
 use crate::worker::StatusUpdater;
 use ninj::buildlog::BuildLog;
