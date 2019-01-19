@@ -23,8 +23,8 @@ pub struct BuildLog {
 /// An entry in the build log for a specific target.
 #[derive(Clone, Debug)]
 pub struct Entry {
-	pub start_time_ms: u32,
-	pub end_time_ms: u32,
+	pub start_time_ms: u64,
+	pub end_time_ms: u64,
 	pub restat_mtime: Option<Timestamp>,
 	pub command_hash: u64,
 }
@@ -188,6 +188,6 @@ fn parse_hex(s: &RawStr) -> Option<u64> {
 		.and_then(|s| u64::from_str_radix(s, 16).ok())
 }
 
-fn as_millis(d: Duration) -> u32 {
-	d.as_secs() as u32 * 1000 + d.subsec_millis()
+fn as_millis(d: Duration) -> u64 {
+	d.as_secs() * 1000 + u64::from(d.subsec_millis())
 }
