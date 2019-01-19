@@ -32,6 +32,14 @@ impl Timestamp {
 	}
 
 	/// Convert a [`SystemTime`] to a [`Timestamp`].
+	///
+	/// The epoch (`1970-01-01 00:00:00.000000000 UTC`), and any other time
+	/// before that, is silently converted to 1 nanosecond after the epoch
+	/// (`1970-01-01 00:00:00.000000001 UTC`), because the timestamp is
+	/// unsigned, and 0 has a special meaning ('no timestamp available').
+	///
+	/// Timestamps more than 2^64-1 nanoseconds after the epoch are silently
+	/// capped to that maximum value (`2554-07-21 23:34:33.709551615 UTC`).
 	pub fn from_system_time(time: SystemTime) -> Self {
 		let ns = time.duration_since(UNIX_EPOCH).ok().map_or(1, |d| {
 			max(
