@@ -5,6 +5,8 @@ use crate::worker::StatusUpdater;
 use ninj::buildlog::BuildLog;
 use ninj::queue::{AsyncBuildQueue, TaskStatus};
 use ninj::spec::Spec;
+use progressbar::ProgressBar;
+use std::error::Error;
 use std::fmt;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -111,7 +113,9 @@ pub enum ProgressFormat {
 	None,
 	Text,
 	ASCIIBar,
+	ASCIISplitBar,
 	HighResBar,
+	HighResSplitBar,
 }
 
 #[derive(Debug)]
@@ -122,17 +126,16 @@ pub struct ParseProgressFormatError {
 impl core::str::FromStr for ProgressFormat {
 	type Err = ParseProgressFormatError;
 	fn from_str(s: &str) -> Result<Self, ParseProgressFormatError> {
-		let s = s.to_lowercase();
-		if s == "none" {
-			Ok(ProgressFormat::None)
-		} else if s == "text" {
-			Ok(ProgressFormat::Text)
-		} else if s == "ascii" {
-			Ok(ProgressFormat::ASCIIBar)
-		} else if s == "highres" {
-			Ok(ProgressFormat::HighResBar)
-		} else {
-			Err(ParseProgressFormatError { value: s })
+		match s.to_lowercase().as_str() {
+			"none" => Ok(ProgressFormat::None),
+			"text" => Ok(ProgressFormat::Text),
+			"ascii" => Ok(ProgressFormat::ASCIIBar),
+			"highres" => Ok(ProgressFormat::HighResBar),
+			"ascii.split" => Ok(ProgressFormat::ASCIISplitBar),
+			"highres.split" => Ok(ProgressFormat::HighResSplitBar),
+			value => Err(ParseProgressFormatError {
+				value: value.to_string(),
+			}),
 		}
 	}
 }
@@ -143,82 +146,7 @@ impl fmt::Display for ParseProgressFormatError {
 	}
 }
 
-fn render_progress_bar(width: usize, percentage: f32, text: &String, highres: bool) -> String {
-	while text.len() > width {
-		return String::from(text.split_at(width).0);
-	}
-
-	let textwidth = text.len();
-	let spaceleft = (width - textwidth) / 2;
-	let spaceright = width - textwidth - spaceleft;
-
-	let arrow_width = percentage * width as f32 / 100.;
-	let arrow_full_char = if highres { "▉" } else { "=" };
-	let arrow_cut_char = if highres { "▋" } else { arrow_full_char };
-
-	let arrow_rest = arrow_width - arrow_width.floor();
-	let arrow_rest_char = if arrow_rest < 0.01 {
-		""
-	} else if !highres {
-		">"
-	} else if arrow_rest > 0.84 {
-		"▊"
-	} else if arrow_rest > 0.68 {
-		"▋"
-	} else if arrow_rest > 0.52 {
-		"▌"
-	} else if arrow_rest > 0.36 {
-		"▍"
-	} else if arrow_rest > 0.20 {
-		"▎"
-	} else {
-		"▏"
-	};
-
-	// If highres, the arrow characters are all 3 bytes. This is assumed below.
-	let arrow_charlen = if highres { 3 } else { 1 };
-	assert!(arrow_full_char.len() == arrow_charlen);
-	assert!(arrow_rest_char.is_empty() || arrow_rest_char.len() == arrow_charlen);
-
-	let arrow = arrow_full_char.repeat(arrow_width.floor() as usize) + arrow_rest_char;
-	let arrowlen = arrow.chars().count();
-
-	let left = if arrowlen < spaceleft {
-		format!("{}{}", arrow, " ".repeat(spaceleft - arrowlen))
-	} else {
-		format!(
-			"{}{}",
-			arrow.split_at((spaceleft - 1) * arrow_charlen).0,
-			arrow_cut_char
-		)
-	};
-	let lefttextlen = spaceleft + textwidth;
-	let right = if arrowlen < lefttextlen {
-		" ".repeat(spaceright)
-	} else if arrowlen == width {
-		format!(
-			"{}{}",
-			arrow
-				.split_at(lefttextlen * arrow_charlen)
-				.1
-				.split_at((spaceright - 1) * arrow_charlen)
-				.0,
-			arrow_cut_char
-		)
-	} else {
-		format!(
-			"{}{}",
-			arrow.split_at(lefttextlen * arrow_charlen).1,
-			" ".repeat(width - arrowlen)
-		)
-	};
-
-	assert!(left.chars().count() == spaceleft);
-	assert!(right.chars().count() == spaceright);
-	assert!(spaceleft + text.chars().count() + spaceright == width);
-
-	format!("\x1b[32m{}\x1b[m{}\x1b[32m{}\x1b[m", left, text, right)
-}
+impl Error for ParseProgressFormatError {}
 
 pub fn show_build_status(
 	start_time: Instant,
@@ -377,21 +305,23 @@ pub fn show_build_status(
 			Some(simulated_time - now)
 		};
 
-		let (percentage, text) = match remaining_duration {
-			None => (0., format!("??% (estimating time)")),
+		let (progress, percentagetext, remainingtext, etatext) = match remaining_duration {
+			None => (
+				0.,
+				"??".to_owned(),
+				"estimating time".to_owned(),
+				"estimating time".to_owned(),
+			),
 			Some(remaining_duration) => {
-				let percentage = (100 * as_millis(current_duration)) as f32
-					/ as_millis(current_duration + remaining_duration) as f32;
-
-				// Every 5 seconds, switch between showing ETA and remaining duration
-				let show_eta = (current_duration.as_secs() % 10) > 5;
-
+				let progress = as_millis(current_duration) as f64
+					/ as_millis(current_duration + remaining_duration) as f64;
 				(
-					percentage,
-					if show_eta {
-						let eta = TimeDuration::from_std(remaining_duration)
-							.map(|duration| chrono::Local::now() + duration)
-							.unwrap();
+					progress,
+					format!("{:02}%", (progress * 100.).ceil() as u8),
+					format!("{}", MinSec::from_duration(remaining_duration)),
+					{
+						let eta = chrono::Local::now()
+							+ TimeDuration::from_std(remaining_duration).unwrap();
 						let is_soon = eta.date() == chrono::Local::now().date()
 							&& remaining_duration < Duration::from_secs(8 * 3600);
 						let timeformat = if is_soon {
@@ -399,17 +329,7 @@ pub fn show_build_status(
 						} else {
 							"%Y-%m-%d %H:%M:%S"
 						};
-						format!(
-							"{}% (ETA {})",
-							percentage.ceil() as u8,
-							eta.format(timeformat)
-						)
-					} else {
-						format!(
-							"{}% ({} remaining)",
-							percentage.ceil() as u8,
-							MinSec::from_duration(remaining_duration)
-						)
+						eta.format(timeformat).to_string()
 					},
 				)
 			}
@@ -418,19 +338,49 @@ pub fn show_build_status(
 		let progress = match progress_format {
 			ProgressFormat::None => "".to_owned(),
 			ProgressFormat::Text => format!(
-				"[Building for {}, {}]\x1b[K\x1b[m\n",
+				"[Building for {}, {}, {} remaining, ETA {}]\x1b[K\x1b[m\n",
 				MinSec::since(start_time),
-				text
+				percentagetext,
+				remainingtext,
+				etatext
 			),
-			ProgressFormat::ASCIIBar | ProgressFormat::HighResBar => format!(
-				"[{}]\x1b[K\x1b[m\n",
-				render_progress_bar(
-					terminal_width() - 3,
-					percentage,
-					&text,
-					progress_format == ProgressFormat::HighResBar
+			ProgressFormat::ASCIIBar | ProgressFormat::HighResBar => {
+				// Every 5 seconds, switch between showing ETA and remaining duration
+				let show_eta = (current_duration.as_secs() % 10) > 5;
+				let text = format!(
+					"{} ({})",
+					percentagetext,
+					if show_eta {
+						format!("ETA {}", etatext)
+					} else {
+						format!("{} remaining", remainingtext)
+					}
+				);
+
+				format!(
+					"[{}]\x1b[K\x1b[m\n",
+					ProgressBar {
+						progress,
+						width: terminal_width() - 3,
+						ascii: progress_format == ProgressFormat::ASCIIBar,
+						label: &text,
+					}
 				)
-			),
+			}
+			ProgressFormat::ASCIISplitBar | ProgressFormat::HighResSplitBar => {
+				let text = format!("{} remaining", remainingtext);
+				format!(
+					"{} [{}] ETA {}\x1b[K\x1b[m\n",
+					percentagetext,
+					ProgressBar {
+						progress,
+						width: terminal_width() - etatext.len() - percentagetext.len() - 9,
+						ascii: progress_format == ProgressFormat::ASCIISplitBar,
+						label: &text,
+					},
+					etatext
+				)
+			}
 		};
 
 		print!("{}", progress);
