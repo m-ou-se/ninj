@@ -5,7 +5,7 @@ mod timeformat;
 mod worker;
 
 use self::logger::Logger;
-use self::status::{show_build_status, BuildStatus};
+use self::status::{show_build_status, BuildStatus, ProgressFormat};
 use self::worker::Worker;
 use log::{debug, error};
 use ninj::buildlog::BuildLog;
@@ -60,6 +60,10 @@ struct Options {
 	/// Enable debug messages.
 	#[structopt(long)]
 	debug: bool,
+
+	/// Set format of progress indication (none/text/ascii/highres).
+	#[structopt(short = "P", long = "progress", default_value = "highres")]
+	progress: ProgressFormat,
 }
 
 fn main() {
@@ -199,6 +203,7 @@ fn main() {
 				&spec,
 				&build_log,
 				opt.sleep_run,
+				opt.progress,
 			);
 		}
 	})
