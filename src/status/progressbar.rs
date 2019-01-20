@@ -34,7 +34,7 @@ impl<'a> std::fmt::Display for ProgressBar<'a> {
 					if self.ascii {
 						'>'
 					} else {
-						blocks[ticks % 8]
+						blocks[ticks % blocks.len()]
 					}
 				} else {
 					' '
