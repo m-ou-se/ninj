@@ -374,7 +374,7 @@ pub fn show_build_status(
 					percentagetext,
 					ProgressBar {
 						progress,
-						width: terminal_width() - etatext.len() - percentagetext.len() - 9,
+						width: terminal_width().saturating_sub(etatext.len() + percentagetext.len() + 9),
 						ascii: progress_format == ProgressFormat::ASCIISplitBar,
 						label: &text,
 					},
