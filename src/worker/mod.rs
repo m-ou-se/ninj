@@ -31,8 +31,8 @@ pub struct Worker<'a> {
 
 impl<'a> Worker<'a> {
 	pub fn run(self) -> Result<(), Error> {
-		// This function wraps _run, to make sure we always call done() or
-		// failed() on the StatusUpdater.
+		// This function wraps _run, to make sure we always send the `Done` or
+		// `Failed` events.
 		let s = self.status_updater;
 		let result = self.run_();
 		s.update(if result.is_err() {
