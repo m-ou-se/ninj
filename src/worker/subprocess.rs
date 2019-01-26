@@ -115,13 +115,12 @@ pub fn listen_to_child(
 						)
 					};
 
-					// Read bytes, and ignore any errors.
-					// Errors are handled by checking `revents` for POLLERR.
+					// Read the bytes from the pipe.
+					// This is guaranteed to not block, because `poll` said so.
 					let n_read = fds[i]
 						.as_mut()
 						.unwrap()
-						.read(buffer_free_space)
-						.unwrap_or(0);
+						.read(buffer_free_space)?;
 
 					// Make the read bytes part of the buffer.
 					let new_len = buffer.len() + n_read;
