@@ -1,5 +1,6 @@
 use raw_string::RawStr;
 use std::mem::forget;
+use std::process::ExitStatus;
 
 /// Something that a [`Worker`] can report its status to.
 pub trait StatusListener {
@@ -31,10 +32,10 @@ pub enum TaskUpdate<'a> {
 	Started,
 	/// The task's running command produced output.
 	Output { data: &'a RawStr },
-	/// The task finished succesfully.
-	Succeeded,
-	/// The task failed.
-	Failed,
+	/// The task ran and has finished (not necessarily succesfully).
+	Finished { status: ExitStatus },
+	/// The task failed to execute.
+	Error,
 }
 
 /// Reports status updates of a worker to a [`StatusListener`].
@@ -54,7 +55,7 @@ impl<'a> WorkerStatusUpdater<'a> {
 	/// [`TaskStatusUpdater`].
 	///
 	/// Dropping the returned object without calling
-	/// [`succeeded`][TaskStatusUpdater::succeeded] will mark the task as
+	/// [`finished`][TaskStatusUpdater::finished] will mark the task as
 	/// failed.
 	pub fn start_task(&self, task_id: usize) -> TaskStatusUpdater {
 		let updater = TaskStatusUpdater {
@@ -69,11 +70,6 @@ impl<'a> WorkerStatusUpdater<'a> {
 	pub fn idle(&self) {
 		self.send_update(WorkerUpdate::Idle);
 	}
-
-	/// Mark the task as done.
-	///
-	/// Dropping the [`WorkerStatusUpdater`] has the same effect.
-	pub fn done(self) {}
 
 	fn send_update(&self, update: WorkerUpdate) {
 		self.status_listener.update(self.worker_id, update);
@@ -92,17 +88,12 @@ impl<'a> TaskStatusUpdater<'a> {
 		self.send_update(TaskUpdate::Output { data });
 	}
 
-	/// Mark the task as succeeded.
-	pub fn succeeded(self) {
-		self.send_update(TaskUpdate::Succeeded);
-		// Prevent Drop::drop, which will mark the task as failed.
+	/// Mark the task as finished.
+	pub fn finished(self, status: ExitStatus) {
+		self.send_update(TaskUpdate::Finished { status });
+		// Prevent Drop::drop, which will report the task as 'failed to run'.
 		forget(self);
 	}
-
-	/// Mark the task as failed.
-	///
-	/// Dropping the [`TaskStatusUpdater`] has the same effect.
-	pub fn failed(self) {}
 
 	fn send_update(&self, update: TaskUpdate) {
 		self.worker_status_updater.send_update(WorkerUpdate::Task {
@@ -114,6 +105,6 @@ impl<'a> TaskStatusUpdater<'a> {
 
 impl<'a> Drop for TaskStatusUpdater<'a> {
 	fn drop(&mut self) {
-		self.send_update(TaskUpdate::Failed);
+		self.send_update(TaskUpdate::Error);
 	}
 }
