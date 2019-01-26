@@ -6,6 +6,7 @@ mod worker;
 
 use self::logger::Logger;
 use self::status::{show_build_status, BuildStatus};
+use self::worker::status::StatusUpdater;
 use self::worker::Worker;
 use log::{debug, error};
 use ninj::buildlog::BuildLog;
@@ -178,10 +179,12 @@ fn main() {
 	crossbeam::thread::scope(|scope| {
 		for i in 0..n_threads {
 			let worker = Worker {
-				id: i,
 				spec: &spec,
 				queue: &queue,
-				status_updater: &status,
+				status_updater: StatusUpdater {
+					worker_id: i,
+					status_listener: &status,
+				},
 				sleep: opt.sleep_run,
 				dep_log: &dep_log,
 				build_log: &build_log,

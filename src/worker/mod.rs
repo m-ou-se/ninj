@@ -1,3 +1,8 @@
+pub mod status;
+mod subprocess;
+
+use self::status::{StatusEvent, StatusUpdater};
+use self::subprocess::listen_to_child;
 use log::{debug, error};
 use ninj::buildlog::BuildLog;
 use ninj::depfile::read_deps_file;
@@ -6,49 +11,40 @@ use ninj::mtime::Timestamp;
 use ninj::queue::AsyncBuildQueue;
 use ninj::spec::{DepStyle, Spec};
 use raw_string::unix::RawStrExt;
+use raw_string::RawStr;
 use std::io::Error;
+use std::os::unix::process::ExitStatusExt;
 use std::process::exit;
 use std::sync::Mutex;
 use std::time::Instant;
 
 /// A worker that executes tasks of a [`Spec`] according to a [`BuildQueue`].
 pub struct Worker<'a> {
-	pub id: usize,
 	pub spec: &'a Spec,
 	pub queue: &'a AsyncBuildQueue,
-	pub status_updater: &'a (dyn StatusUpdater + Sync),
+	pub status_updater: StatusUpdater<'a>,
 	pub sleep: bool,
 	pub dep_log: &'a Mutex<DepLogMut>,
 	pub build_log: &'a Mutex<BuildLog>,
 	pub start_time: Instant,
 }
 
-/// Something that a [`Worker`] can report its status to.
-pub trait StatusUpdater {
-	fn idle(&self, worker: usize);
-	fn running(&self, worker: usize, task: usize);
-	fn done(&self, worker: usize);
-	fn failed(&self, worker: usize);
-}
-
 impl<'a> Worker<'a> {
 	pub fn run(self) -> Result<(), Error> {
 		// This function wraps _run, to make sure we always call done() or
 		// failed() on the StatusUpdater.
-		let id = self.id;
 		let s = self.status_updater;
 		let result = self.run_();
-		if result.is_err() {
-			s.failed(id);
+		s.update(if result.is_err() {
+			StatusEvent::Failed
 		} else {
-			s.done(id);
-		}
+			StatusEvent::Done
+		});
 		result
 	}
 
 	pub fn run_(self) -> Result<(), Error> {
 		let Worker {
-			id,
 			queue,
 			spec,
 			status_updater,
@@ -57,13 +53,13 @@ impl<'a> Worker<'a> {
 			build_log,
 			start_time,
 		} = self;
-		let log = format!("ninj::worker-{}", id);
+		let log = format!("ninj::worker-{}", status_updater.worker_id);
 		let mut lock = queue.lock();
 		loop {
 			let mut next = lock.next();
 			drop(lock);
 			if next.is_none() {
-				status_updater.idle(id);
+				status_updater.update(StatusEvent::Idle);
 				next = queue.lock().wait();
 			}
 			let task = if let Some(task) = next {
@@ -73,12 +69,12 @@ impl<'a> Worker<'a> {
 				break;
 			};
 			let worker_start_time = Instant::now();
-			status_updater.running(id, task);
+			status_updater.update(StatusEvent::Running { task });
 			let restat;
 			let mut restat_fn;
 			if sleep {
 				std::thread::sleep(std::time::Duration::from_millis(
-					2500 + id as u64 * 5123 % 2000,
+					2500 + status_updater.worker_id as u64 * 5123 % 2000,
 				));
 				restat = None;
 			} else {
@@ -87,14 +83,27 @@ impl<'a> Worker<'a> {
 					.as_ref()
 					.expect("Got phony task.");
 				debug!(target: &log, "Running: {:?}", rule.command);
-				let status = std::process::Command::new("sh")
+				let child = std::process::Command::new("sh")
 					.arg("-c")
 					.arg(rule.command.as_osstr())
-					.status()
+					.stdin(std::process::Stdio::null())
+					.stdout(std::process::Stdio::piped())
+					.stderr(std::process::Stdio::piped())
+					.spawn()
 					.unwrap_or_else(|e| {
 						error!("Unable to spawn sh process: {}", e);
 						exit(1);
 					});
+				let status = listen_to_child(child, 10, &|_, output| {
+					status_updater.update(StatusEvent::Output {
+						task,
+						data: RawStr::from(output),
+					});
+				})
+				.unwrap_or_else(|e| {
+					error!("Unable to read from subprocess: {}", e);
+					exit(1);
+				});
 				match status.code() {
 					Some(0) => {}
 					Some(x) => {
@@ -102,7 +111,11 @@ impl<'a> Worker<'a> {
 						exit(1);
 					}
 					None => {
-						error!("Exited with signal: {}", rule.command);
+						error!(
+							"Exited with signal {}: {}",
+							status.signal().unwrap(),
+							rule.command
+						);
 						exit(1);
 					}
 				}

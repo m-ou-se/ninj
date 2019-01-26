@@ -1,8 +1,11 @@
 use crate::timeformat::MinSec;
-use crate::worker::StatusUpdater;
+use crate::worker::status::{StatusEvent, StatusListener};
+use memchr::memchr_iter;
 use ninj::buildlog::BuildLog;
 use ninj::queue::{AsyncBuildQueue, TaskStatus};
 use ninj::spec::Spec;
+use raw_string::RawString;
+use std::mem::replace;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 use time::Duration as TimeDuration;
@@ -15,10 +18,15 @@ enum WorkerStatus {
 	Done,
 }
 
-#[derive(Clone)]
 struct BuildStatusInner {
 	workers: Vec<WorkerStatus>,
+	output: Vec<BufferedOutput>,
 	dirty: bool,
+}
+
+struct BufferedOutput {
+	task: usize,
+	output: RawString,
 }
 
 pub struct BuildStatus {
@@ -31,6 +39,7 @@ impl BuildStatus {
 		BuildStatus {
 			inner: Mutex::new(BuildStatusInner {
 				workers: vec![WorkerStatus::Starting; n_threads],
+				output: Vec::new(),
 				dirty: true,
 			}),
 			condvar: Condvar::new(),
@@ -42,20 +51,26 @@ impl BuildStatus {
 		lock.set_status(worker, status);
 		self.condvar.notify_all();
 	}
+
+	fn buffer_output(&self, task: usize, output: RawString) {
+		let mut lock = self.inner.lock().unwrap();
+		lock.buffer_output(task, output);
+		self.condvar.notify_all();
+	}
 }
 
-impl StatusUpdater for BuildStatus {
-	fn idle(&self, worker: usize) {
-		self.set_status(worker, WorkerStatus::Idle);
-	}
-	fn running(&self, worker: usize, task: usize) {
-		self.set_status(worker, WorkerStatus::Running { task });
-	}
-	fn done(&self, worker: usize) {
-		self.set_status(worker, WorkerStatus::Done);
-	}
-	fn failed(&self, worker: usize) {
-		self.set_status(worker, WorkerStatus::Done);
+impl StatusListener for BuildStatus {
+	fn status_update(&self, worker: usize, event: StatusEvent) {
+		match event {
+			StatusEvent::Idle => self.set_status(worker, WorkerStatus::Idle),
+			StatusEvent::Running { task } => {
+				self.set_status(worker, WorkerStatus::Running { task })
+			}
+			StatusEvent::Done | StatusEvent::Failed => self.set_status(worker, WorkerStatus::Done),
+			StatusEvent::Output { task, data } => {
+				self.buffer_output(task, RawString::from(data));
+			}
+		}
 	}
 }
 
@@ -63,6 +78,10 @@ impl BuildStatusInner {
 	fn set_status(&mut self, worker: usize, status: WorkerStatus) {
 		self.workers[worker] = status;
 		self.dirty = true;
+	}
+
+	fn buffer_output(&mut self, task: usize, output: RawString) {
+		self.output.push(BufferedOutput { task, output });
 	}
 
 	fn are_all_workers_done(&self) -> bool {
@@ -111,8 +130,8 @@ pub fn show_build_status(
 	build_log: &Mutex<BuildLog>,
 	sleep: bool,
 ) {
+	let mut last_output_task = usize::max_value();
 	let mut lock = status.inner.lock().unwrap();
-	println!("{}:", if sleep { "Sleeping" } else { "Building" });
 	loop {
 		let mut now = Instant::now();
 		let waittime = now + Duration::from_millis(100);
@@ -123,9 +142,32 @@ pub fn show_build_status(
 		let queuelock = queue.lock();
 		let mut queuestate = queuelock.clone_queue();
 		drop(queuelock);
-		let mut buildstate = lock.clone();
-		lock.dirty = false;
+		let mut buildstate = BuildStatusInner {
+			workers: lock.workers.clone(),
+			output: replace(&mut lock.output, Vec::new()),
+			dirty: replace(&mut lock.dirty, false),
+		};
 		drop(lock);
+		for BufferedOutput { task, output } in &buildstate.output {
+			if *task != last_output_task {
+				let command = spec.build_rules[*task]
+					.command
+					.as_ref()
+					.expect("Got output for phony task");
+				println!("\x1b[30;44m {}:\x1b[K\x1b[m", command.description);
+				last_output_task = *task;
+			}
+			let mut n_written = 0;
+			for newline in memchr_iter(b'\n', output.as_bytes()) {
+				println!("{}\x1b[K", &output[n_written..newline]);
+				n_written = newline + 1;
+			}
+			println!("{}\x1b[K\x1b[m", &output[n_written..]);
+		}
+		println!(
+			"\x1b[30;47m {}:\x1b[K\x1b[m",
+			if sleep { "Sleeping" } else { "Building" }
+		);
 		for worker in &buildstate.workers {
 			match worker {
 				WorkerStatus::Starting => {
@@ -283,7 +325,7 @@ pub fn show_build_status(
 			break;
 		}
 
-		print!("\x1b[{}A", buildstate.workers.len() + 1);
+		print!("\x1b[{}A", buildstate.workers.len() + 2);
 		lock = status.inner.lock().unwrap();
 	}
 	println!("\x1b[32;1mFinished.\x1b[m");
