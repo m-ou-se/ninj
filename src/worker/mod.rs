@@ -1,7 +1,7 @@
 pub mod status;
 mod subprocess;
 
-use self::status::{StatusEvent, StatusUpdater};
+use self::status::WorkerStatusUpdater;
 use self::subprocess::listen_to_child;
 use log::{debug, error};
 use ninj::buildlog::BuildLog;
@@ -12,7 +12,6 @@ use ninj::queue::AsyncBuildQueue;
 use ninj::spec::{DepStyle, Spec};
 use raw_string::unix::RawStrExt;
 use raw_string::RawStr;
-use std::io::Error;
 use std::os::unix::process::ExitStatusExt;
 use std::process::exit;
 use std::sync::Mutex;
@@ -22,7 +21,7 @@ use std::time::Instant;
 pub struct Worker<'a> {
 	pub spec: &'a Spec,
 	pub queue: &'a AsyncBuildQueue,
-	pub status_updater: StatusUpdater<'a>,
+	pub status_updater: WorkerStatusUpdater<'a>,
 	pub sleep: bool,
 	pub dep_log: &'a Mutex<DepLogMut>,
 	pub build_log: &'a Mutex<BuildLog>,
@@ -30,20 +29,8 @@ pub struct Worker<'a> {
 }
 
 impl<'a> Worker<'a> {
-	pub fn run(self) -> Result<(), Error> {
-		// This function wraps _run, to make sure we always send the `Done` or
-		// `Failed` events.
-		let s = self.status_updater;
-		let result = self.run_();
-		s.update(if result.is_err() {
-			StatusEvent::Failed
-		} else {
-			StatusEvent::Done
-		});
-		result
-	}
-
-	pub fn run_(self) -> Result<(), Error> {
+	/// Run the worker.
+	pub fn run(self) {
 		let Worker {
 			queue,
 			spec,
@@ -59,7 +46,7 @@ impl<'a> Worker<'a> {
 			let mut next = lock.next();
 			drop(lock);
 			if next.is_none() {
-				status_updater.update(StatusEvent::Idle);
+				status_updater.idle();
 				next = queue.lock().wait();
 			}
 			let task = if let Some(task) = next {
@@ -69,7 +56,7 @@ impl<'a> Worker<'a> {
 				break;
 			};
 			let worker_start_time = Instant::now();
-			status_updater.update(StatusEvent::Running { task });
+			let task_status_updater = status_updater.start_task(task);
 			let restat;
 			let mut restat_fn;
 			if sleep {
@@ -95,17 +82,16 @@ impl<'a> Worker<'a> {
 						exit(1);
 					});
 				let status = listen_to_child(child, 10, &|_, output| {
-					status_updater.update(StatusEvent::Output {
-						task,
-						data: RawStr::from(output),
-					});
+					task_status_updater.output(RawStr::from(output));
 				})
 				.unwrap_or_else(|e| {
 					error!("Unable to read from subprocess: {}", e);
 					exit(1);
 				});
 				match status.code() {
-					Some(0) => {}
+					Some(0) => {
+						task_status_updater.succeeded();
+					}
 					Some(x) => {
 						error!("Exited with status code {}: {}", x, rule.command);
 						exit(1);
@@ -119,24 +105,28 @@ impl<'a> Worker<'a> {
 						exit(1);
 					}
 				}
-				if rule.deps == Some(DepStyle::Gcc) {
-					read_deps_file(rule.depfile.as_path(), |target, deps| {
-						// TODO: Don't use now().
-						let mtime = Timestamp::from_system_time(std::time::SystemTime::now());
-						dep_log
-							.lock()
-							.unwrap()
-							.insert_deps(target, Some(mtime), deps)
-							.unwrap_or_else(|e| {
-								error!("Unable to update dependency log: {}", e);
-								exit(1);
-							});
-						Ok(())
-					})
-					.unwrap_or_else(|e| {
-						error!("Unable to read dependency file {:?}: {}", rule.depfile, e);
-						exit(1);
-					});
+				match rule.deps {
+					Some(DepStyle::Gcc) => {
+						read_deps_file(rule.depfile.as_path(), |target, deps| {
+							// TODO: Don't use now().
+							let mtime = Timestamp::from_system_time(std::time::SystemTime::now());
+							dep_log
+								.lock()
+								.unwrap()
+								.insert_deps(target, Some(mtime), deps)
+								.unwrap_or_else(|e| {
+									error!("Unable to update dependency log: {}", e);
+									exit(1);
+								});
+							Ok(())
+						})
+						.unwrap_or_else(|e| {
+							error!("Unable to read dependency file {:?}: {}", rule.depfile, e);
+							exit(1);
+						});
+					}
+					Some(DepStyle::Msvc) => unimplemented!("MSVC-style dependencies"),
+					None => {}
 				}
 				if rule.restat {
 					debug!(
@@ -166,6 +156,5 @@ impl<'a> Worker<'a> {
 			lock = queue.lock();
 			lock.complete_task(task, restat);
 		}
-		Ok(())
 	}
 }

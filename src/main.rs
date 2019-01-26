@@ -6,7 +6,7 @@ mod worker;
 
 use self::logger::Logger;
 use self::status::{show_build_status, BuildStatus, ProgressFormat};
-use self::worker::status::StatusUpdater;
+use self::worker::status::WorkerStatusUpdater;
 use self::worker::Worker;
 use log::{debug, error};
 use ninj::buildlog::BuildLog;
@@ -185,16 +185,16 @@ fn main() {
 			let worker = Worker {
 				spec: &spec,
 				queue: &queue,
-				status_updater: StatusUpdater {
-					worker_id: i,
+				status_updater: WorkerStatusUpdater {
 					status_listener: &status,
+					worker_id: i,
 				},
 				sleep: opt.sleep_run,
 				dep_log: &dep_log,
 				build_log: &build_log,
 				start_time,
 			};
-			scope.spawn(move |_| worker.run().unwrap());
+			scope.spawn(move |_| worker.run());
 		}
 		if opt.debug {
 			debug!("Regular output disabled because debug messages are enabled.");

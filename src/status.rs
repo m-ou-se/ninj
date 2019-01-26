@@ -1,7 +1,7 @@
 mod progressbar;
 
 use crate::timeformat::MinSec;
-use crate::worker::status::{StatusEvent, StatusListener};
+use crate::worker::status::{StatusListener, TaskUpdate, WorkerUpdate};
 use memchr::memchr_iter;
 use ninj::buildlog::BuildLog;
 use ninj::queue::{AsyncBuildQueue, TaskStatus};
@@ -65,16 +65,19 @@ impl BuildStatus {
 }
 
 impl StatusListener for BuildStatus {
-	fn status_update(&self, worker: usize, event: StatusEvent) {
-		match event {
-			StatusEvent::Idle => self.set_status(worker, WorkerStatus::Idle),
-			StatusEvent::Running { task } => {
-				self.set_status(worker, WorkerStatus::Running { task })
-			}
-			StatusEvent::Done | StatusEvent::Failed => self.set_status(worker, WorkerStatus::Done),
-			StatusEvent::Output { task, data } => {
-				self.buffer_output(task, RawString::from(data));
-			}
+	fn update(&self, worker_id: usize, update: WorkerUpdate) {
+		match update {
+			WorkerUpdate::Idle => self.set_status(worker_id, WorkerStatus::Idle),
+			WorkerUpdate::Done => self.set_status(worker_id, WorkerStatus::Done),
+			WorkerUpdate::Task {
+				task_id,
+				update: TaskUpdate::Started,
+			} => self.set_status(worker_id, WorkerStatus::Running { task: task_id }),
+			WorkerUpdate::Task {
+				task_id,
+				update: TaskUpdate::Output { data },
+			} => self.buffer_output(task_id, RawString::from(data)),
+			WorkerUpdate::Task { .. } => {}
 		}
 	}
 }
