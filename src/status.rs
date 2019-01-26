@@ -464,7 +464,7 @@ pub fn show_build_status(
 				);
 
 				format!(
-					"[{}]\x1b[K\x1b[m\n",
+					"[{}]\x1b[K\x1b[m\r",
 					ProgressBar {
 						progress,
 						width: terminal_width() - 3,
@@ -476,7 +476,7 @@ pub fn show_build_status(
 			ProgressFormat::ASCIISplitBar | ProgressFormat::HighResSplitBar => {
 				let text = format!("{} remaining", remainingtext);
 				format!(
-					"{} [{}] ETA {}\x1b[K\x1b[m\n",
+					"{} [{}] ETA {}\x1b[K\x1b[m\r",
 					percentagetext,
 					ProgressBar {
 						progress,
@@ -496,10 +496,10 @@ pub fn show_build_status(
 			break;
 		}
 
-		print!("\x1b[{}A", progress.lines().count() + worker_status_lines);
+		println!("\x1b[{}A", progress.lines().count() + worker_status_lines);
 		lock = status.inner.lock().unwrap();
 	}
-	println!("\x1b[32;1mFinished.\x1b[m");
+	println!("Finished.\x1b[K");
 }
 
 fn terminal_width() -> usize {
