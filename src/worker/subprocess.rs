@@ -37,7 +37,7 @@ use std::slice::from_raw_parts_mut;
 pub fn listen_to_child(
 	mut child: Child,
 	timeout_ms: i32,
-	output_callback: &dyn Fn(Source, &[u8]),
+	output_callback: &dyn Fn(&[u8]),
 ) -> IoResult<ExitStatus> {
 	// The file descriptors we'll be reading from.
 	let mut fds = [
@@ -54,10 +54,6 @@ pub fn listen_to_child(
 
 	// Data that has been read from one of the pipes.
 	let mut buffer = Vec::<u8>::with_capacity(16 * 1024);
-
-	// The stream from which the data in `buffer` came.
-	// (To avoid mixing the different streams.)
-	let mut buffer_source = Source::Stdout;
 
 	loop {
 		// Only look at stdout if that stream is still open.
@@ -83,27 +79,12 @@ pub fn listen_to_child(
 		if poll(&mut poll_fds[start..end], timeout_ms).map_err(|e| e.as_errno().unwrap())? == 0 {
 			// Timeout.
 			// Flush the buffer.
-			output_callback(buffer_source, &buffer);
+			output_callback(&buffer);
 			buffer.clear();
 		} else {
 			// New data (or errors) available.
 			for i in start..end {
-				let source = match i {
-					0 => Source::Stdout,
-					_ => Source::Stderr,
-				};
-
 				if poll_fds[i].revents().unwrap().contains(EventFlags::POLLIN) {
-					if source != buffer_source {
-						// Switch from stdout to stderr or back.
-						if !buffer.is_empty() {
-							// Flush the buffer first.
-							output_callback(buffer_source, &buffer);
-							buffer.clear();
-						}
-						buffer_source = source;
-					}
-
 					// Reserve 4 KiB of space in the buffer.
 					buffer.reserve(4 * 1024);
 
@@ -138,19 +119,13 @@ pub fn listen_to_child(
 
 	// Flush the buffer, if there's anything in there.
 	if !buffer.is_empty() {
-		output_callback(buffer_source, &buffer);
+		output_callback(&buffer);
 		buffer.clear();
 	}
 
 	// Both stderr and stdout have been closed. Now we just wait for the process to
 	// exit.
 	child.wait()
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Source {
-	Stdout,
-	Stderr,
 }
 
 unsafe fn into_file(stream: impl IntoRawFd) -> File {
