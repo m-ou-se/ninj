@@ -66,7 +66,7 @@ pub fn listen_to_child(
 		// Only look at stderr if that stream is still open.
 		let end = if fds[1].is_some() { 2 } else { 1 };
 
-		// If both are closed, we reading them.
+		// If both are closed, we stop reading them.
 		if start == end {
 			break;
 		}
