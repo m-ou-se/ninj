@@ -1,3 +1,5 @@
+mod progressbar;
+
 use crate::timeformat::MinSec;
 use crate::worker::status::{StatusEvent, StatusListener};
 use memchr::memchr_iter;
@@ -6,6 +8,9 @@ use ninj::queue::{AsyncBuildQueue, TaskStatus};
 use ninj::spec::Spec;
 use raw_string::RawString;
 use std::mem::replace;
+use progressbar::ProgressBar;
+use std::error::Error;
+use std::fmt;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 use time::Duration as TimeDuration;
@@ -122,6 +127,46 @@ fn estimated_total_task_time(
 	}
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProgressFormat {
+	None,
+	Text,
+	ASCIIBar,
+	ASCIISplitBar,
+	HighResBar,
+	HighResSplitBar,
+}
+
+#[derive(Debug)]
+pub struct ParseProgressFormatError {
+	value: String,
+}
+
+impl core::str::FromStr for ProgressFormat {
+	type Err = ParseProgressFormatError;
+	fn from_str(s: &str) -> Result<Self, ParseProgressFormatError> {
+		match s.to_lowercase().as_str() {
+			"none" => Ok(ProgressFormat::None),
+			"text" => Ok(ProgressFormat::Text),
+			"ascii" => Ok(ProgressFormat::ASCIIBar),
+			"highres" => Ok(ProgressFormat::HighResBar),
+			"ascii.split" => Ok(ProgressFormat::ASCIISplitBar),
+			"highres.split" => Ok(ProgressFormat::HighResSplitBar),
+			value => Err(ParseProgressFormatError {
+				value: value.to_string(),
+			}),
+		}
+	}
+}
+
+impl fmt::Display for ParseProgressFormatError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{}", self.value)
+	}
+}
+
+impl Error for ParseProgressFormatError {}
+
 pub fn show_build_status(
 	start_time: Instant,
 	status: &BuildStatus,
@@ -129,6 +174,7 @@ pub fn show_build_status(
 	spec: &Spec,
 	build_log: &Mutex<BuildLog>,
 	sleep: bool,
+	progress_format: ProgressFormat,
 ) {
 	let mut last_output_task = usize::max_value();
 	let mut lock = status.inner.lock().unwrap();
@@ -223,11 +269,11 @@ pub fn show_build_status(
 				}
 			}
 
-			// All workers still idle? Nothing else to do, stop simulating
+			// All workers still idle or done? Nothing else to do, stop simulating
 			if buildstate
 				.workers
 				.iter()
-				.find(|&w| *w != WorkerStatus::Idle)
+				.find(|&w| *w != WorkerStatus::Idle && *w != WorkerStatus::Done)
 				.is_none()
 			{
 				break;
@@ -266,6 +312,8 @@ pub fn show_build_status(
 			{
 				Some(earliest_remaining_job) => earliest_remaining_job,
 				None => {
+					// This happens when workers are working on a job for which we cannot
+					// guess how long it will take.
 					estimation_impossible = true;
 					break;
 				}
@@ -289,44 +337,118 @@ pub fn show_build_status(
 
 		let now = Instant::now();
 
-		if estimation_impossible || simulated_time <= now {
-			println!(
-				"Building for {}, estimating remaining time...\x1b[K\x1b[m",
-				MinSec::since(start_time)
-			);
+		let current_duration = start_time.elapsed();
+		let remaining_duration = if estimation_impossible {
+			None
+		} else if simulated_time < now {
+			// Should have been done already, estimate it will be done immediately
+			Some(Duration::from_millis(0))
 		} else {
-			let remaining_duration = simulated_time - now;
-			let eta = TimeDuration::from_std(remaining_duration)
-				.map(|duration| chrono::Local::now() + duration);
-			match eta {
-				Ok(eta) => {
-					let is_soon = eta.date() == chrono::Local::now().date()
-						&& remaining_duration < Duration::from_secs(8 * 3600);
-					let timeformat = if is_soon {
-						"%H:%M:%S"
-					} else {
-						"%Y-%m-%d %H:%M:%S"
-					};
-					println!(
-						"Building for {}, remaining time for build is {} (ETA {})\x1b[K\x1b[m",
-						MinSec::since(start_time),
-						MinSec::from_duration(remaining_duration),
-						eta.format(timeformat)
-					);
-				}
-				_ => println!(
-					"Building for {}, remaining time is infinite...\x1b[K\x1b[m",
-					MinSec::since(start_time)
-				),
+			Some(simulated_time - now)
+		};
+
+		let (progress, percentagetext, remainingtext, etatext) = match remaining_duration {
+			None => (
+				0.,
+				"??".to_owned(),
+				"estimating time".to_owned(),
+				"estimating time".to_owned(),
+			),
+			Some(remaining_duration) => {
+				let progress = as_millis(current_duration) as f64
+					/ as_millis(current_duration + remaining_duration) as f64;
+				(
+					progress,
+					format!("{:02}%", (progress * 100.) as u8),
+					format!("{}", MinSec::from_duration(remaining_duration)),
+					{
+						let eta = chrono::Local::now()
+							+ TimeDuration::from_std(remaining_duration).unwrap();
+						let is_soon = eta.date() == chrono::Local::now().date()
+							&& remaining_duration < Duration::from_secs(8 * 3600);
+						let timeformat = if is_soon {
+							"%H:%M:%S"
+						} else {
+							"%Y-%m-%d %H:%M:%S"
+						};
+						eta.format(timeformat).to_string()
+					},
+				)
 			}
-		}
+		};
+
+		let progress = match progress_format {
+			ProgressFormat::None => "".to_owned(),
+			ProgressFormat::Text => format!(
+				"[Building for {}, {}, {} remaining, ETA {}]\x1b[K\x1b[m\n",
+				MinSec::since(start_time),
+				percentagetext,
+				remainingtext,
+				etatext
+			),
+			ProgressFormat::ASCIIBar | ProgressFormat::HighResBar => {
+				// Every 5 seconds, switch between showing ETA and remaining duration
+				let show_eta = (current_duration.as_secs() % 10) > 5;
+				let text = format!(
+					"{} ({})",
+					percentagetext,
+					if show_eta {
+						format!("ETA {}", etatext)
+					} else {
+						format!("{} remaining", remainingtext)
+					}
+				);
+
+				format!(
+					"[{}]\x1b[K\x1b[m\n",
+					ProgressBar {
+						progress,
+						width: terminal_width() - 3,
+						ascii: progress_format == ProgressFormat::ASCIIBar,
+						label: &text,
+					}
+				)
+			}
+			ProgressFormat::ASCIISplitBar | ProgressFormat::HighResSplitBar => {
+				let text = format!("{} remaining", remainingtext);
+				format!(
+					"{} [{}] ETA {}\x1b[K\x1b[m\n",
+					percentagetext,
+					ProgressBar {
+						progress,
+						width: terminal_width()
+							.saturating_sub(etatext.len() + percentagetext.len() + 9),
+						ascii: progress_format == ProgressFormat::ASCIISplitBar,
+						label: &text,
+					},
+					etatext
+				)
+			}
+		};
+
+		print!("{}", progress);
 
 		if build_is_done {
 			break;
 		}
 
-		print!("\x1b[{}A", buildstate.workers.len() + 2);
+		print!(
+			"\x1b[{}A",
+			buildstate.workers.len() + progress.lines().count() + 1
+		);
 		lock = status.inner.lock().unwrap();
 	}
 	println!("\x1b[32;1mFinished.\x1b[m");
+}
+
+fn terminal_width() -> usize {
+	if let Some((w, _)) = term_size::dimensions() {
+		w
+	} else {
+		80 /* an educated guess */
+	}
+}
+
+fn as_millis(d: Duration) -> u64 {
+	d.as_secs() * 1000 + u64::from(d.subsec_millis())
 }

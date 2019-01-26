@@ -19,6 +19,7 @@ log = "0.4.6"
 chrono = "0.4.6"
 time = "0.1.42"
 nix = "0.13.0"
+term_size = "0.3"
 
 [profile.dev]
 opt-level = 3
