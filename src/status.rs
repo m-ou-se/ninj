@@ -317,7 +317,7 @@ pub fn show_build_status(
 					/ as_millis(current_duration + remaining_duration) as f64;
 				(
 					progress,
-					format!("{:02}%", (progress * 100.).ceil() as u8),
+					format!("{:02}%", (progress * 100.) as u8),
 					format!("{}", MinSec::from_duration(remaining_duration)),
 					{
 						let eta = chrono::Local::now()
