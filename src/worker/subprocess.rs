@@ -40,12 +40,10 @@ pub fn listen_to_child(
 	output_callback: &dyn Fn(Source, &[u8]),
 ) -> IoResult<ExitStatus> {
 	// The file descriptors we'll be reading from.
-	let mut fds = unsafe {
-		[
-			child.stdout.take().map(|f| into_file(f)),
-			child.stderr.take().map(|f| into_file(f)),
-		]
-	};
+	let mut fds = [
+		child.stdout.take().map(|f| unsafe { into_file(f) }),
+		child.stderr.take().map(|f| unsafe { into_file(f) }),
+	];
 
 	// The list of file descriptors `poll` will need to check. (In the same
 	// order as `fds`.)
