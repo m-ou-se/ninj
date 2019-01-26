@@ -199,14 +199,7 @@ fn main() {
 		if opt.debug {
 			debug!("Regular output disabled because debug messages are enabled.");
 		} else {
-			show_build_status(
-				start_time,
-				&status,
-				&queue,
-				&spec,
-				&build_log,
-				opt.progress,
-			);
+			show_build_status(start_time, &status, &queue, &spec, &build_log, opt.progress);
 		}
 	})
 	.unwrap();

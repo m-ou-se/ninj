@@ -1,7 +1,6 @@
 mod progressbar;
 
 use crate::timeformat::MinSec;
-use std::process::ExitStatus;
 use crate::worker::status::{StatusListener, TaskUpdate, WorkerUpdate};
 use memchr::memchr_iter;
 use ninj::buildlog::BuildLog;
@@ -12,6 +11,7 @@ use raw_string::RawString;
 use std::error::Error;
 use std::fmt;
 use std::mem::replace;
+use std::process::ExitStatus;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 use time::Duration as TimeDuration;
@@ -101,7 +101,7 @@ impl StatusListener for BuildStatus {
 			WorkerUpdate::Task {
 				task_id,
 				update: TaskUpdate::Error,
-			} => self.buffer_output(task_id, Message::Failed(None))
+			} => self.buffer_output(task_id, Message::Failed(None)),
 		}
 	}
 }
@@ -230,19 +230,29 @@ pub fn show_build_status(
 				Message::Output(data) => {
 					if *task != last_output_task {
 						let mut failed = false;
-						if let Some(BufferedOutput { task: next_task, output: Message::Failed(status) }) = i.clone().next() {
+						if let Some(BufferedOutput {
+							task: next_task,
+							output: Message::Failed(status),
+						}) = i.clone().next()
+						{
 							if task == next_task {
 								i.next();
 								failed = true;
 								if let Some(status) = status {
 									println!("\x1b[30;41m  \x1b[m\x1b[31;1m Failed with {}: {}:\x1b[K\x1b[m", status, command.description);
 								} else {
-									println!("\x1b[30;41m  \x1b[m\x1b[31;1m Failed: {}:\x1b[K\x1b[m", command.description);
+									println!(
+										"\x1b[30;41m  \x1b[m\x1b[31;1m Failed: {}:\x1b[K\x1b[m",
+										command.description
+									);
 								}
 							}
 						}
 						if !failed {
-							println!("\x1b[30;43m  \x1b[m\x1b[33m {}:\x1b[K\x1b[m", command.description);
+							println!(
+								"\x1b[30;43m  \x1b[m\x1b[33m {}:\x1b[K\x1b[m",
+								command.description
+							);
 						}
 					}
 					let mut n_written = 0;
@@ -253,17 +263,26 @@ pub fn show_build_status(
 					println!("{}\x1b[K\x1b[m", &data[n_written..]);
 					last_output_task = *task;
 				}
-				Message::Started => {},
+				Message::Started => {}
 				Message::Success => {
-					println!("\x1b[30;42m  \x1b[m\x1b[32m Finished {}\x1b[K\x1b[m", command.description);
+					println!(
+						"\x1b[30;42m  \x1b[m\x1b[32m Finished {}\x1b[K\x1b[m",
+						command.description
+					);
 					last_output_task = *task;
 				}
 				Message::Failed(Some(status)) => {
-					println!("\x1b[30;41m  \x1b[m\x1b[31;1m Failed with {}: {}\x1b[K\x1b[m", status, command.description);
+					println!(
+						"\x1b[30;41m  \x1b[m\x1b[31;1m Failed with {}: {}\x1b[K\x1b[m",
+						status, command.description
+					);
 					last_output_task = *task;
 				}
 				Message::Failed(None) => {
-					println!("\x1b[30;41m  \x1b[m\x1b[31;1m Failed: {}\x1b[K\x1b[m", command.description);
+					println!(
+						"\x1b[30;41m  \x1b[m\x1b[31;1m Failed: {}\x1b[K\x1b[m",
+						command.description
+					);
 					last_output_task = *task;
 				}
 			}
@@ -280,12 +299,11 @@ pub fn show_build_status(
 					TaskStatus::Running { start_time } => {
 						format!("[{}] ", MinSec::since(start_time))
 					}
-					_ => String::new()
+					_ => String::new(),
 				};
 				println!(
 					"\x1b[30;44m  \x1b[m\x1b[34m {}{} ...\x1b[K\x1b[m",
-					statustext,
-					command.description,
+					statustext, command.description,
 				);
 				worker_status_lines += 1;
 			}
