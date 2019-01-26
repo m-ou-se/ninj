@@ -130,7 +130,7 @@ impl<'a> Worker<'a> {
 			});
 
 		// Listen for output.
-		let status = listen_to_child(child, 10, &|output| {
+		let status = listen_to_child(child, 100, &|output| {
 			status_updater.output(RawStr::from(output));
 		})
 		.unwrap_or_else(|e| {
