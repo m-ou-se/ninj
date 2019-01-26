@@ -1,6 +1,7 @@
 mod progressbar;
 
 use crate::timeformat::MinSec;
+use std::process::ExitStatus;
 use crate::worker::status::{StatusListener, TaskUpdate, WorkerUpdate};
 use memchr::memchr_iter;
 use ninj::buildlog::BuildLog;
@@ -31,7 +32,14 @@ struct BuildStatusInner {
 
 struct BufferedOutput {
 	task: usize,
-	output: RawString,
+	output: Message,
+}
+
+enum Message {
+	Started,
+	Output(RawString),
+	Success,
+	Failed(Option<ExitStatus>),
 }
 
 pub struct BuildStatus {
@@ -57,7 +65,7 @@ impl BuildStatus {
 		self.condvar.notify_all();
 	}
 
-	fn buffer_output(&self, task: usize, output: RawString) {
+	fn buffer_output(&self, task: usize, output: Message) {
 		let mut lock = self.inner.lock().unwrap();
 		lock.buffer_output(task, output);
 		self.condvar.notify_all();
@@ -72,12 +80,28 @@ impl StatusListener for BuildStatus {
 			WorkerUpdate::Task {
 				task_id,
 				update: TaskUpdate::Started,
-			} => self.set_status(worker_id, WorkerStatus::Running { task: task_id }),
+			} => {
+				let mut lock = self.inner.lock().unwrap();
+				lock.set_status(worker_id, WorkerStatus::Running { task: task_id });
+				lock.buffer_output(task_id, Message::Started);
+				self.condvar.notify_all();
+			}
 			WorkerUpdate::Task {
 				task_id,
 				update: TaskUpdate::Output { data },
-			} => self.buffer_output(task_id, RawString::from(data)),
-			WorkerUpdate::Task { .. } => {}
+			} => self.buffer_output(task_id, Message::Output(RawString::from(data))),
+			WorkerUpdate::Task {
+				task_id,
+				update: TaskUpdate::Finished { status },
+			} if status.success() => self.buffer_output(task_id, Message::Success),
+			WorkerUpdate::Task {
+				task_id,
+				update: TaskUpdate::Finished { status },
+			} => self.buffer_output(task_id, Message::Failed(Some(status))),
+			WorkerUpdate::Task {
+				task_id,
+				update: TaskUpdate::Error,
+			} => self.buffer_output(task_id, Message::Failed(None))
 		}
 	}
 }
@@ -88,7 +112,7 @@ impl BuildStatusInner {
 		self.dirty = true;
 	}
 
-	fn buffer_output(&mut self, task: usize, output: RawString) {
+	fn buffer_output(&mut self, task: usize, output: Message) {
 		self.output.push(BufferedOutput { task, output });
 	}
 
@@ -176,7 +200,6 @@ pub fn show_build_status(
 	queue: &AsyncBuildQueue,
 	spec: &Spec,
 	build_log: &Mutex<BuildLog>,
-	sleep: bool,
 	progress_format: ProgressFormat,
 ) {
 	let mut last_output_task = usize::max_value();
@@ -197,54 +220,74 @@ pub fn show_build_status(
 			dirty: replace(&mut lock.dirty, false),
 		};
 		drop(lock);
-		for BufferedOutput { task, output } in &buildstate.output {
-			if *task != last_output_task {
+		let mut i = buildstate.output.iter();
+		while let Some(BufferedOutput { task, output }) = i.next() {
+			let command = spec.build_rules[*task]
+				.command
+				.as_ref()
+				.expect("Got output for phony task");
+			match output {
+				Message::Output(data) => {
+					if *task != last_output_task {
+						let mut failed = false;
+						if let Some(BufferedOutput { task: next_task, output: Message::Failed(status) }) = i.clone().next() {
+							if task == next_task {
+								i.next();
+								failed = true;
+								if let Some(status) = status {
+									println!("\x1b[30;41m  \x1b[m\x1b[31;1m Failed with {}: {}:\x1b[K\x1b[m", status, command.description);
+								} else {
+									println!("\x1b[30;41m  \x1b[m\x1b[31;1m Failed: {}:\x1b[K\x1b[m", command.description);
+								}
+							}
+						}
+						if !failed {
+							println!("\x1b[30;43m  \x1b[m\x1b[33m {}:\x1b[K\x1b[m", command.description);
+						}
+					}
+					let mut n_written = 0;
+					for newline in memchr_iter(b'\n', data.as_bytes()) {
+						println!("{}\x1b[K", &data[n_written..newline]);
+						n_written = newline + 1;
+					}
+					println!("{}\x1b[K\x1b[m", &data[n_written..]);
+					last_output_task = *task;
+				}
+				Message::Started => {},
+				Message::Success => {
+					println!("\x1b[30;42m  \x1b[m\x1b[32m Finished {}\x1b[K\x1b[m", command.description);
+					last_output_task = *task;
+				}
+				Message::Failed(Some(status)) => {
+					println!("\x1b[30;41m  \x1b[m\x1b[31;1m Failed with {}: {}\x1b[K\x1b[m", status, command.description);
+					last_output_task = *task;
+				}
+				Message::Failed(None) => {
+					println!("\x1b[30;41m  \x1b[m\x1b[31;1m Failed: {}\x1b[K\x1b[m", command.description);
+					last_output_task = *task;
+				}
+			}
+		}
+
+		let mut worker_status_lines = 0;
+		for worker in &buildstate.workers {
+			if let WorkerStatus::Running { task } = worker {
 				let command = spec.build_rules[*task]
 					.command
 					.as_ref()
-					.expect("Got output for phony task");
-				println!("\x1b[30;44m {}:\x1b[K\x1b[m", command.description);
-				last_output_task = *task;
-			}
-			let mut n_written = 0;
-			for newline in memchr_iter(b'\n', output.as_bytes()) {
-				println!("{}\x1b[K", &output[n_written..newline]);
-				n_written = newline + 1;
-			}
-			println!("{}\x1b[K\x1b[m", &output[n_written..]);
-		}
-		println!(
-			"\x1b[30;47m {}:\x1b[K\x1b[m",
-			if sleep { "Sleeping" } else { "Building" }
-		);
-		for worker in &buildstate.workers {
-			match worker {
-				WorkerStatus::Starting => {
-					println!("=> \x1b[34mStarting...\x1b[K\x1b[m");
-				}
-				WorkerStatus::Idle => {
-					println!("=> \x1b[34mIdle\x1b[K\x1b[m");
-				}
-				WorkerStatus::Done => {
-					println!("=> \x1b[32mDone\x1b[K\x1b[m");
-				}
-				WorkerStatus::Running { task } => {
-					let command = spec.build_rules[*task]
-						.command
-						.as_ref()
-						.expect("Got phony task");
-					let statustext = match queuestate.get_task_status(*task) {
-						TaskStatus::Running { start_time } => {
-							format!("{}", MinSec::since(start_time))
-						}
-						x => format!("{:?}", x),
-					};
-					println!(
-						"=> [{t}] \x1b[33m{d} ...\x1b[K\x1b[m",
-						d = command.description,
-						t = statustext
-					);
-				}
+					.expect("Got phony task");
+				let statustext = match queuestate.get_task_status(*task) {
+					TaskStatus::Running { start_time } => {
+						format!("[{}] ", MinSec::since(start_time))
+					}
+					_ => String::new()
+				};
+				println!(
+					"\x1b[30;44m  \x1b[m\x1b[34m {}{} ...\x1b[K\x1b[m",
+					statustext,
+					command.description,
+				);
+				worker_status_lines += 1;
 			}
 		}
 
@@ -435,10 +478,7 @@ pub fn show_build_status(
 			break;
 		}
 
-		print!(
-			"\x1b[{}A",
-			buildstate.workers.len() + progress.lines().count() + 1
-		);
+		print!("\x1b[{}A", progress.lines().count() + worker_status_lines);
 		lock = status.inner.lock().unwrap();
 	}
 	println!("\x1b[32;1mFinished.\x1b[m");

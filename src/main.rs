@@ -205,7 +205,6 @@ fn main() {
 				&queue,
 				&spec,
 				&build_log,
-				opt.sleep_run,
 				opt.progress,
 			);
 		}
