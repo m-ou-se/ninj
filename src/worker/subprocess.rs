@@ -28,7 +28,7 @@ use std::slice::from_raw_parts_mut;
 ///   .arg("build")
 ///   .spawn()?;
 ///
-/// let result = listen_to_child(child, 100, |is_stderr, buffer| {
+/// let result = listen_to_child(child, 100, |buffer| {
 ///    println!("{}", RawStr::from(buffer));
 /// })?;
 ///
