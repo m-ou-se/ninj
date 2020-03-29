@@ -41,7 +41,7 @@ pub struct BuildQueue {
 	n_left: usize,
 }
 
-/// The tasks tracked by a [`BuildQueue`].
+/// A task tracked by a [`BuildQueue`].
 #[derive(Clone, Debug)]
 pub struct Task {
 	/// Status of this task.
@@ -261,6 +261,12 @@ impl BuildQueue {
 	///
 	/// Returns the number of newly ready tasks that were unblocked by the
 	/// completion of this one.
+	///
+	/// # Panics
+	/// Panics when
+	///  - the [`start_time`][TaskStatus::Running::start_time] of the task lies
+	///    in the future; or
+	///  - the task wasn't running.
 	pub fn complete_task(
 		&mut self,
 		task: usize,
@@ -269,12 +275,14 @@ impl BuildQueue {
 		self.complete_task_at(task, restat, Instant::now())
 	}
 
-	/// Like complete_task, marks a task as completed, but notes it as having
+	/// Like `complete_task`, marks a task as completed, but notes it as having
 	/// finished at the given time instead of now.
 	///
 	/// # Panics
-	/// Panics when `finish_time` is before the
-	/// [`start_time`][TaskStatus::Running::start_time] of the task.
+	/// Panics when
+	///  - `finish_time` is before the
+	///    [`start_time`][TaskStatus::Running::start_time] of the task; or
+	///  - the task wasn't running.
 	pub fn complete_task_at(
 		&mut self,
 		task: usize,
@@ -372,7 +380,7 @@ impl BuildQueue {
 	///
 	/// Does not include phony tasks.
 	/// Does include tasks which are not marked as outdated, but might be later
-	/// because a (indirect) dependencies is outdated.
+	/// because (indirect) dependencies are outdated.
 	pub fn n_left(&self) -> usize {
 		self.n_left
 	}
@@ -391,7 +399,7 @@ impl AsyncBuildQueue {
 impl<'a> LockedAsyncBuildQueue<'a> {
 	/// Check if there is something to do right now.
 	///
-	/// Returns the index of the task. Will never return a phony tasks, as
+	/// Returns the index of the task. Will never return a phony task, as
 	/// those don't have any work to do.
 	///
 	/// Does not block.

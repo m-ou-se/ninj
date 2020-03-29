@@ -14,7 +14,7 @@
 //! - **`.ninja_log` files**
 //!
 //!   The [`buildlog`] module allows both reading from and writing to
-//!   `.ninja_log` files,   which store how each target was built previously.
+//!   `.ninja_log` files, which store how each target was built previously.
 //!
 //! - **`.ninja_deps` files**
 //!

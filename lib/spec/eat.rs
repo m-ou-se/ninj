@@ -41,7 +41,7 @@ pub fn eat_path<'a>(src: &mut &'a RawStr) -> Result<&'a RawStr, ParseError> {
 				}
 			}
 			Some(n) if n > 0 && src[len + n - 1] == b'$' => {
-				// Esacped character. Continue.
+				// Escaped character. Continue.
 				len += n + 1;
 			}
 			Some(n) => {
