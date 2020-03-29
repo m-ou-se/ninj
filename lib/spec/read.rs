@@ -235,10 +235,10 @@ fn read_into<'a: 'p, 'p>(
 			Statement::Include { path } => {
 				let path = expand_str(path, scope).err_at(loc)?;
 				let path = path.to_path().err_at(loc)?;
-				let source = RawStr::from_bytes(pile.add(read_bytes(&path).err_at(loc)?));
+				let source = pile.add(read_bytes(&path).err_at(loc)?);
 				read_into(
 					&file_name.with_file_name(path),
-					source,
+					RawStr::from_bytes(source),
 					pile,
 					spec,
 					scope,

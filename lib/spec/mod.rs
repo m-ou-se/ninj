@@ -14,8 +14,10 @@ pub mod scope;
 pub use self::read::read;
 pub use self::read::read_from;
 
+use raw_string::unix::RawStrExt;
 use raw_string::{RawStr, RawString};
 use std::collections::HashMap;
+use std::path::Path;
 
 /// The result of reading a `build.ninja` file, the specification of how to
 /// build what.
@@ -107,11 +109,10 @@ impl Spec {
 	}
 
 	/// Get the 'builddir'.
-	pub fn build_dir(&self) -> &std::path::Path {
-		use raw_string::unix::RawStrExt;
+	pub fn build_dir(&self) -> &Path {
 		self.build_dir
 			.as_ref()
-			.map_or(std::path::Path::new(""), |p| p.as_path())
+			.map_or(Path::new(""), |p| p.as_path())
 	}
 
 	/// Generate an index mapping output file names to build rule indexes.
