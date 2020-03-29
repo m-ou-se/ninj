@@ -104,8 +104,6 @@ fn main() {
 		&opt.targets
 	};
 
-	let target_to_rule = spec.make_index();
-
 	let build_log = Mutex::new(
 		BuildLog::read(spec.build_dir().join(".ninja_log")).unwrap_or_else(|e| {
 			error!("Error while reading .ninja_log: {}", e);
@@ -119,6 +117,8 @@ fn main() {
 		// TODO: Delete and start a new file.
 		exit(1);
 	});
+
+	let target_to_rule = spec.make_index();
 
 	let targets = targets.iter().map(|target| {
 		*target_to_rule.get(&target[..]).unwrap_or_else(|| {
