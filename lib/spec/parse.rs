@@ -233,16 +233,16 @@ impl<'a, 'b> Parser<'a, 'b> {
 				}
 			}
 			"rule" => {
-				let name =
-					eat_identifier(&mut line, false).ok_or_else(|| ParseError::ExpectedName.at(loc))?;
+				let name = eat_identifier(&mut line, false)
+					.ok_or_else(|| ParseError::ExpectedName.at(loc))?;
 				if !line.is_empty() {
 					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}
 				Statement::Rule { name }
 			}
 			"pool" => {
-				let name =
-					eat_identifier(&mut line, false).ok_or_else(|| ParseError::ExpectedName.at(loc))?;
+				let name = eat_identifier(&mut line, false)
+					.ok_or_else(|| ParseError::ExpectedName.at(loc))?;
 				if !line.is_empty() {
 					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}

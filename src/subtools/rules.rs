@@ -1,7 +1,7 @@
 use super::Options;
 use ninj::spec::read;
-use std::io::Error;
 use std::collections::BTreeSet;
+use std::io::Error;
 
 /// Output the list of rule names.
 ///
