@@ -156,6 +156,11 @@ fn main() {
 
 	drop(dep_stat_cache);
 
+	if queue.n_left() == 0 {
+		eprintln!("ninj: no work to do.");
+		exit(0);
+	}
+
 	if opt.dry_run {
 		let n_tasks = queue.n_left();
 		while let Some(task) = queue.next() {
