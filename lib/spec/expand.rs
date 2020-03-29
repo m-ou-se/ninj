@@ -12,11 +12,11 @@ pub fn check_escapes(src: &RawStr) -> Result<(), InvalidEscape> {
 		i += n + 1;
 		match src.get(i) {
 			Some(b'\n') | Some(b' ') | Some(b':') | Some(b'$') => i += 1,
-			Some(x) if is_identifier_char(*x) => i += 1,
+			Some(x) if is_identifier_char(*x, true) => i += 1,
 			Some(b'{') => {
 				loop {
 					match src.get(i + 1) {
-						Some(x) if is_identifier_char(*x) => i += 1,
+						Some(x) if is_identifier_char(*x, false) => i += 1,
 						Some(b'}') => break,
 						_ => return Err(InvalidEscape),
 					}
@@ -160,13 +160,13 @@ fn expand_str_to<S: VarScope>(
 	while let Some(i) = memchr::memchr(b'$', source.as_bytes()) {
 		result.push_str(&source[..i]); // The part before the '$' is used literally
 		source = &source[i + 1..]; // Only keep part after the '$' for further processing
-		if let Some(var) = eat_identifier(&mut source) {
+		if let Some(var) = eat_identifier(&mut source, true) {
 			// Simple variable: "$var"
 			expand_var_to(var, scope, result, prot)?;
 		} else if source.starts_with("{") {
 			// Braced variable: "${var}"
 			let mut s = &source[1..]; // Skip the '{'.
-			if let Some(var) = eat_identifier(&mut s) {
+			if let Some(var) = eat_identifier(&mut s, false) {
 				if s.starts_with("}") {
 					// Only do the expansion when the matching '}' exists in the right place.
 					// (This should already have been checked by `check_escapes`.)

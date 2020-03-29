@@ -140,7 +140,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 	pub fn next_variable(&mut self) -> Result<Option<Variable<'a>>, ErrorWithLocation<ParseError>> {
 		if self.next_indent() > 0 {
 			if let Some(mut line) = self.next_line() {
-				let name = eat_identifier(&mut line)
+				let name = eat_identifier(&mut line, false)
 					.ok_or_else(|| ParseError::ExpectedVarDef.at(self.location()))?;
 				eat_whitespace(&mut line);
 				if let Some((b'=', mut value)) = line.split_first() {
@@ -178,7 +178,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 			}
 		};
 
-		let ident = eat_identifier(&mut line)
+		let ident = eat_identifier(&mut line, false)
 			.ok_or_else(|| ParseError::ExpectedStatement.at(self.location()))?;
 
 		eat_whitespace(&mut line);
@@ -200,7 +200,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 				}
 
 				eat_whitespace(&mut line);
-				let rule_name = eat_identifier(&mut line)
+				let rule_name = eat_identifier(&mut line, false)
 					.ok_or_else(|| ParseError::ExpectedRuleName.at(loc))?;
 
 				eat_whitespace(&mut line);
@@ -234,7 +234,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 			}
 			"rule" => {
 				let name =
-					eat_identifier(&mut line).ok_or_else(|| ParseError::ExpectedName.at(loc))?;
+					eat_identifier(&mut line, false).ok_or_else(|| ParseError::ExpectedName.at(loc))?;
 				if !line.is_empty() {
 					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}
@@ -242,7 +242,7 @@ impl<'a, 'b> Parser<'a, 'b> {
 			}
 			"pool" => {
 				let name =
-					eat_identifier(&mut line).ok_or_else(|| ParseError::ExpectedName.at(loc))?;
+					eat_identifier(&mut line, false).ok_or_else(|| ParseError::ExpectedName.at(loc))?;
 				if !line.is_empty() {
 					return Err(ParseError::ExpectedEndOfLine.at(loc));
 				}

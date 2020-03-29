@@ -10,14 +10,14 @@ pub fn eat_whitespace(src: &mut &RawStr) -> usize {
 	n
 }
 
-pub fn is_identifier_char(c: u8) -> bool {
-	c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || c == b'.'
+pub fn is_identifier_char(c: u8, simple: bool) -> bool {
+	c.is_ascii_alphanumeric() || c == b'_' || c == b'-' || (!simple && c == b'.')
 }
 
-pub fn eat_identifier<'a>(src: &mut &'a RawStr) -> Option<&'a str> {
+pub fn eat_identifier<'a>(src: &mut &'a RawStr, simple: bool) -> Option<&'a str> {
 	let ident_end = src
 		.bytes()
-		.position(|c| !is_identifier_char(c))
+		.position(|c| !is_identifier_char(c, simple))
 		.unwrap_or(src.len());
 	let (ident, rest) = src.split_at(ident_end);
 	*src = rest;
