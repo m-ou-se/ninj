@@ -78,7 +78,7 @@ impl fmt::Display for ExpansionError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "Cycle in variable expansion: ")?;
 		for var in self.cycle.iter().rev() {
-			write!(f, "{} -> ", var)?
+			write!(f, "{} -> ", var)?;
 		}
 		write!(f, "{}", self.cycle[self.cycle.len() - 1])
 	}
