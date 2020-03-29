@@ -1,5 +1,6 @@
 //! `$`-expansion.
 
+use super::canonicalizepath::canonicalize_path_in_place;
 use super::eat::{eat_identifier, is_identifier_char};
 use super::error::{ExpansionError, InvalidEscape};
 use super::scope::{FoundVar, VarScope};
@@ -65,25 +66,16 @@ pub fn expand_str<T: AsRef<RawStr>, S: VarScope>(
 	Ok(s)
 }
 
-pub(super) fn expand_strs<S: VarScope>(
-	sources: &[&RawStr],
+/// Same as `expand_str`, but also [canonicalizes][canonicalize_path_in_place]
+/// the result.
+pub fn expand_path<T: AsRef<RawStr>, S: VarScope>(
+	source: T,
 	scope: &S,
-) -> Result<Vec<RawString>, ExpansionError> {
-	let mut vec = Vec::new();
-	expand_strs_into(sources, scope, &mut vec)?;
-	Ok(vec)
-}
-
-pub(super) fn expand_strs_into<S: VarScope>(
-	sources: &[&RawStr],
-	scope: &S,
-	vec: &mut Vec<RawString>,
-) -> Result<(), ExpansionError> {
-	vec.reserve(sources.len());
-	for source in sources {
-		vec.push(expand_str(source, scope)?);
-	}
-	Ok(())
+) -> Result<RawString, ExpansionError> {
+	let mut s = RawString::new();
+	expand_str_to(source.as_ref(), scope, &mut s, None)?;
+	canonicalize_path_in_place(&mut s);
+	Ok(s)
 }
 
 fn is_shell_safe(c: u8) -> bool {

@@ -1,5 +1,5 @@
-use super::error::ReadError;
-use super::expand::{expand_str, expand_strs, expand_strs_into, expand_var};
+use super::error::{ExpansionError, ReadError};
+use super::expand::{expand_path, expand_str, expand_var};
 use super::parse::{Parser, Statement, Variable};
 use super::scope::{BuildRuleScope, BuildScope, ExpandedVar, FileScope, Rule, VarScope};
 use super::{BuildCommand, BuildRule, DepStyle, Spec};
@@ -150,8 +150,8 @@ fn read_into<'a: 'p, 'p>(
 				let mut outputs =
 					Vec::with_capacity(explicit_outputs.len() + implicit_outputs.len());
 				let mut inputs = Vec::with_capacity(explicit_deps.len() + implicit_deps.len());
-				expand_strs_into(&explicit_outputs, &build_scope, &mut outputs).err_at(loc)?;
-				expand_strs_into(&explicit_deps, &build_scope, &mut inputs).err_at(loc)?;
+				expand_paths_into(&explicit_outputs, &build_scope, &mut outputs).err_at(loc)?;
+				expand_paths_into(&explicit_deps, &build_scope, &mut inputs).err_at(loc)?;
 
 				let command = if rule_name == "phony" {
 					None
@@ -206,23 +206,16 @@ fn read_into<'a: 'p, 'p>(
 					})
 				};
 
-				expand_strs_into(&implicit_outputs, &build_scope, &mut outputs).err_at(loc)?;
-				expand_strs_into(&implicit_deps, &build_scope, &mut inputs).err_at(loc)?;
+				let mut order = Vec::new();
 
-				let mut order_deps = expand_strs(&order_deps, &build_scope).err_at(loc)?;
-
-				for path in outputs
-					.iter_mut()
-					.chain(inputs.iter_mut())
-					.chain(order_deps.iter_mut())
-				{
-					super::canonicalizepath::canonicalize_path_in_place(path);
-				}
+				expand_paths_into(&implicit_outputs, &build_scope, &mut outputs).err_at(loc)?;
+				expand_paths_into(&implicit_deps, &build_scope, &mut inputs).err_at(loc)?;
+				expand_paths_into(&order_deps, &build_scope, &mut order).err_at(loc)?;
 
 				spec.build_rules.push(BuildRule {
 					outputs,
 					inputs,
-					order_deps,
+					order_deps: order,
 					command,
 				});
 			}
@@ -261,5 +254,17 @@ fn read_into<'a: 'p, 'p>(
 		}
 	}
 
+	Ok(())
+}
+
+fn expand_paths_into<S: VarScope>(
+	sources: &[&RawStr],
+	scope: &S,
+	vec: &mut Vec<RawString>,
+) -> Result<(), ExpansionError> {
+	vec.reserve(sources.len());
+	for source in sources {
+		vec.push(expand_path(source, scope)?);
+	}
 	Ok(())
 }
