@@ -185,5 +185,12 @@ impl<'a> Worker<'a> {
 			);
 			exit(1);
 		});
+		std::fs::remove_file(command.depfile.as_path()).unwrap_or_else(|e| {
+			error!(
+				"Unable to remove dependency file {:?}: {}",
+				command.depfile, e
+			);
+			exit(1);
+		});
 	}
 }
