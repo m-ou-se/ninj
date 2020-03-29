@@ -127,7 +127,7 @@ pub fn check_outputs<'a, 'b>(
 /// Returns whether the target is outdated. That is, it returns true:
 ///
 ///  - When the `oldest_output` was [`None`], or
-///  - When any of the inputs does not exist or is older than the oldest output,
+///  - When any of the inputs does not exist or is newer than the oldest output,
 ///    or
 ///  - When any of the order-only dependencies does not exist.
 ///
