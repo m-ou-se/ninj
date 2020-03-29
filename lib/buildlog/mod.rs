@@ -3,7 +3,7 @@
 use crate::mtime::Timestamp;
 use crate::spec::BuildRule;
 use raw_string::{RawStr, RawString};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Error, ErrorKind, Write};
 use std::iter::FromIterator;
@@ -17,7 +17,7 @@ pub use self::murmurhash::murmur_hash_64a;
 /// The latest entries for all targets in the build log.
 #[derive(Clone, Debug)]
 pub struct BuildLog {
-	pub entries: BTreeMap<RawString, Entry>,
+	pub entries: HashMap<RawString, Entry>,
 }
 
 /// An entry in the build log for a specific target.
@@ -33,7 +33,7 @@ impl BuildLog {
 	/// Create an empty build log.
 	pub fn new() -> BuildLog {
 		BuildLog {
-			entries: BTreeMap::new(),
+			entries: HashMap::new(),
 		}
 	}
 
@@ -138,7 +138,7 @@ impl BuildLog {
 		let not_an_integer = || Error::new(ErrorKind::InvalidData, "Field is not an integer");
 		let not_hex = || Error::new(ErrorKind::InvalidData, "Invalid command hash");
 
-		let mut entries = BTreeMap::new();
+		let mut entries = HashMap::new();
 
 		loop {
 			line.clear();

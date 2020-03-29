@@ -1,8 +1,8 @@
 //! Getting the `mtime` of files to check if they're outdated.
 
 use std::cmp::max;
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::io::Error;
 use std::num::NonZeroU64;
 use std::path::Path;
@@ -75,14 +75,14 @@ pub fn mtime(file: &Path) -> Result<Option<Timestamp>, Error> {
 /// A cache that remembers the `mtime`s of files.
 pub struct StatCache<'a> {
 	// `None` means the file does not exist.
-	cache: BTreeMap<&'a Path, Option<Timestamp>>,
+	cache: HashMap<&'a Path, Option<Timestamp>>,
 }
 
 impl<'a> StatCache<'a> {
 	/// Create an empty StatCache.
 	pub fn new() -> Self {
 		StatCache {
-			cache: BTreeMap::new(),
+			cache: HashMap::new(),
 		}
 	}
 
