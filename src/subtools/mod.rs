@@ -2,6 +2,7 @@ mod deps;
 mod graph;
 mod log;
 mod targets;
+mod rules;
 
 use super::Options;
 use std::io::{Error, ErrorKind};
@@ -11,6 +12,7 @@ static SUBTOOLS: &'static [(&'static str, fn(&Options) -> Result<(), Error>)] = 
 	("graph", self::graph::main),
 	("log", log::main),
 	("targets", targets::main),
+	("rules", rules::main),
 	("list", list),
 ];
 
