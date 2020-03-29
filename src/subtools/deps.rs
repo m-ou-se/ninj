@@ -19,11 +19,10 @@ pub(super) fn main(opt: &Options) -> Result<(), Error> {
 			};
 			let nanos = deps.mtime().map_or(0, Timestamp::to_nanos);
 			println!(
-				"{}: #deps {}, deps mtime {}.{:09} ({})",
+				"{}: #deps {}, deps mtime {} ({})",
 				path,
 				deps.deps().len(),
-				nanos / 1_000_000_000,
-				nanos % 1_000_000_000,
+				nanos,
 				if deps.mtime().map_or(true, |t| Some(t) < mtime()) {
 					"STALE"
 				} else {
