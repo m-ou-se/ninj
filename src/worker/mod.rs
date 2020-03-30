@@ -169,10 +169,13 @@ impl<'a> Worker<'a> {
 		}
 
 		// Record the success to the build log.
-		self.build_log
-			.lock()
-			.unwrap()
-			.add_entry(rule, self.start_time, start_time, end_time, mtime);
+		self.build_log.lock().unwrap().add_entry(
+			rule,
+			self.start_time,
+			start_time,
+			end_time,
+			mtime,
+		);
 	}
 
 	fn check_gcc_deps(&self, command: &BuildCommand) {
