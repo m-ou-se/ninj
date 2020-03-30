@@ -7,6 +7,7 @@ use log::{debug, error};
 use ninj::buildlog::BuildLog;
 use ninj::depfile::read_deps_file;
 use ninj::deplog::DepLogMut;
+use ninj::mtime;
 use ninj::mtime::Timestamp;
 use ninj::queue::AsyncBuildQueue;
 use ninj::spec::{BuildCommand, BuildRule, DepStyle, Spec};
@@ -157,11 +158,21 @@ impl<'a> Worker<'a> {
 		// Stop the clock!
 		let end_time = Instant::now();
 
+		let mut mtime = None;
+		// TODO: If this is a restat rule and any output's mtime is unchanged,
+		// use the mtime of the newest input instead.
+		for output in &rule.outputs {
+			mtime = mtime.max(mtime::mtime(output.as_path()).unwrap_or_else(|e| {
+				error!("Unable to get mtime of {:?}: {}", output, e);
+				exit(1);
+			}));
+		}
+
 		// Record the success to the build log.
 		self.build_log
 			.lock()
 			.unwrap()
-			.add_entry(rule, self.start_time, start_time, end_time);
+			.add_entry(rule, self.start_time, start_time, end_time, mtime);
 	}
 
 	fn check_gcc_deps(&self, command: &BuildCommand) {

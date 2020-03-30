@@ -43,6 +43,7 @@ impl BuildLog {
 		build_starttime: Instant,
 		starttime: Instant,
 		endtime: Instant,
+		mtime: Option<Timestamp>,
 	) {
 		assert!(
 			starttime >= build_starttime,
@@ -56,7 +57,7 @@ impl BuildLog {
 				Entry {
 					start_time_ms: as_millis(starttime - build_starttime),
 					end_time_ms: as_millis(endtime - build_starttime),
-					restat_mtime: None,
+					restat_mtime: mtime,
 					command_hash: murmur_hash_64a(command.as_bytes()),
 				},
 			);
