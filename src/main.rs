@@ -141,7 +141,10 @@ fn main() {
 			|input: &RawStr| {
 				let task = target_to_rule.get(input);
 				if let Some(&task) = task {
-					dependencies.push(DepInfo { task, order_only: false });
+					dependencies.push(DepInfo {
+						task,
+						order_only: false,
+					});
 				}
 				task.is_some()
 			},
@@ -150,7 +153,10 @@ fn main() {
 		for order_dep in &rule.order_deps {
 			let order_dep: &RawStr = order_dep;
 			if let Some(&task) = target_to_rule.get(order_dep) {
-				dependencies.push(DepInfo { task, order_only: true });
+				dependencies.push(DepInfo {
+					task,
+					order_only: true,
+				});
 			}
 		}
 		TaskInfo {
