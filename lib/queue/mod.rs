@@ -346,8 +346,8 @@ impl BuildQueue {
 					next_outdated = *outdated;
 				}
 				_ => unreachable!(
-					"Task {} in `next' list was not `Needed': {:?}",
-					next, self.tasks[next]
+					"Task {} was not `Needed', but appears in the `next' list of task {}: {:?}",
+					next, task, self.tasks[next]
 				),
 			}
 			self.tasks[next].n_deps_left -= 1;
