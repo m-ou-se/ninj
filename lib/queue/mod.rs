@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 ///
 /// [`make_async`][Self::make_async] turns this into a concurrent
 /// data-structure on which threads can [wait][LockedAsyncBuildQueue::wait].
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BuildQueue {
 	/// Information related to build rules.
 	///
