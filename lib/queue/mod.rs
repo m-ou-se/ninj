@@ -163,18 +163,33 @@ impl BuildQueue {
 		// Build dependency graph
 		while let Some(task) = to_visit.pop() {
 			assert_eq!(tasks[task].status, TaskStatus::WillBeNeeded);
-			let info = get_task(task);
+			let mut info = get_task(task);
 			let mut n_deps = 0;
+			let mut n_order_deps = 0;
 			for dep in info.dependencies {
 				if tasks[dep.task].status == TaskStatus::NotNeeded {
 					to_visit.push(dep.task);
 					tasks[dep.task].status = TaskStatus::WillBeNeeded;
 				}
 				n_deps += 1;
+				if dep.order_only {
+					n_order_deps += 1;
+				}
 				tasks[dep.task].next.push(DepInfo {
 					task,
 					order_only: dep.order_only,
 				});
+			}
+			if !info.outdated && n_deps > 0 && n_deps == n_order_deps {
+				// This task is not outdated, and have no dependencies that can
+				// make it outdated. Therefore, it does not need to run.
+				// However, it still has order-only dependencies, so still
+				// needs to appear in the dependency graph in case others
+				// depend on this task. We'll turn it into a phony task to
+				// still give it a node in the graph, but make clear it won't
+				// ever run. This also avoids counting it in the total number
+				// of tasks.
+				info.phony = true;
 			}
 			tasks[task].status = TaskStatus::Needed {
 				phony: info.phony,

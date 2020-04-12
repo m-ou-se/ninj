@@ -4,8 +4,8 @@
 //!
 //!  1. [`check_outputs`][outdated::check_outputs]:
 //!     Checking the outputs and their logged dependencies.
-//!  2. [`check_dependencies`][outdated::check_dependencies]:
-//!     Checking the inputs and order-only dependencies.
+//!  2. [`check_inputs`][outdated::check_inputs]:
+//!     Checking the inputs.
 //!
 //! [`is_outdated`][outdated::is_outdated] performs both.
 
@@ -21,12 +21,11 @@ use std::io::{Error, ErrorKind};
 ///
 /// Checks all the outputs and the dependencies.
 ///
-/// Calls `check_dep(path, is_order_only)` for every dependency. This
-/// function should return true iff there's a build rule to make the
-/// dependency. If there is not, and the file does not exist, an error is
-/// returned.
+/// Calls `check_dep(path)` for every dependency. This function should return
+/// true iff there's a build rule to make the dependency. If there is not, and
+/// the file does not exist, an error is returned.
 ///
-/// Simply calls [`check_outputs`] followed by [`check_dependencies`].
+/// Simply calls [`check_outputs`] followed by [`check_inputs`].
 ///
 /// Paths from the `dep_log` are looked up first in `stat_cache`, but never
 /// stored in it. If it was not in that cache, it will be cached in
@@ -37,10 +36,10 @@ pub fn is_outdated<'a, 'b>(
 	dep_log: &'b DepLog,
 	stat_cache: &mut StatCache<'a>,
 	dep_stat_cache: &mut StatCache<'b>,
-	check_dep: impl FnMut(&RawStr, bool) -> bool,
+	check_dep: impl FnMut(&RawStr) -> bool,
 ) -> Result<bool, Error> {
 	let oldest_output = check_outputs(rule, dep_log, stat_cache, dep_stat_cache)?;
-	check_dependencies(rule, stat_cache, oldest_output, check_dep)
+	check_inputs(rule, stat_cache, oldest_output, check_dep)
 }
 
 /// Check all the outputs and their logged dependencies.
@@ -122,36 +121,30 @@ pub fn check_outputs<'a, 'b>(
 	Ok(oldest)
 }
 
-/// Check all the input and order-only dependencies.
+/// Check all the inputs.
 ///
 /// Returns whether the target is outdated. That is, it returns true:
 ///
 ///  - When the `oldest_output` was [`None`], or
-///  - When any of the inputs does not exist or is newer than the oldest output,
-///    or
-///  - When any of the order-only dependencies does not exist.
+///  - When any of the inputs does not exist or is newer than the oldest output.
 ///
 /// Needs the `oldest_output` from [`check_outputs`] to compare the
 /// timestamps against. If this is [`None`], it will return `true`, but
-/// still checks all the dependencies.
+/// still checks all the inputs.
 ///
-/// Calls `check_dep(path, is_order_only)` for every dependency. This
-/// function should return true iff there's a build rule to make the
-/// dependency. If there is not, and the file does not exist, an error is
-/// returned.
-pub fn check_dependencies<'a>(
+/// Calls `check_dep(path)` for every input. This function should return true
+/// iff there's a build rule to make the input. If there is not, and the file
+/// does not exist, an error is returned.
+pub fn check_inputs<'a>(
 	rule: &'a BuildRule,
 	stat_cache: &mut StatCache<'a>,
 	oldest_output: Option<Timestamp>,
-	mut check_dep: impl FnMut(&RawStr, bool) -> bool,
+	mut check_dep: impl FnMut(&RawStr) -> bool,
 ) -> Result<bool, Error> {
-	let iter_inputs = rule.inputs.iter().map(|path| (path, false));
-	let iter_order_deps = rule.order_deps.iter().map(|path| (path, true));
-
 	let mut outdated = oldest_output.is_none();
 
-	for (path, is_order_only) in iter_inputs.chain(iter_order_deps) {
-		let has_rule = check_dep(path, is_order_only);
+	for path in &rule.inputs {
+		let has_rule = check_dep(path);
 		let mtime = stat_cache.mtime(path.as_path())?;
 		if mtime.is_none() {
 			outdated = true;
@@ -159,7 +152,7 @@ pub fn check_dependencies<'a>(
 				"{:?} is outdated because {:?} does not exist.",
 				rule.outputs, path
 			);
-		} else if !is_order_only && mtime > oldest_output {
+		} else if mtime > oldest_output {
 			outdated = true;
 			debug!(
 				"{:?} is outdated because {:?} is newer.",

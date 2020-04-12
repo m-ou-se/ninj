@@ -138,15 +138,21 @@ fn main() {
 			&dep_log,
 			&mut stat_cache,
 			&mut dep_stat_cache,
-			|dependency: &RawStr, order_only| {
-				let task = target_to_rule.get(dependency);
+			|input: &RawStr| {
+				let task = target_to_rule.get(input);
 				if let Some(&task) = task {
-					dependencies.push(DepInfo { task, order_only });
+					dependencies.push(DepInfo { task, order_only: false });
 				}
 				task.is_some()
 			},
 		)
 		.unwrap();
+		for order_dep in &rule.order_deps {
+			let order_dep: &RawStr = order_dep;
+			if let Some(&task) = target_to_rule.get(order_dep) {
+				dependencies.push(DepInfo { task, order_only: true });
+			}
+		}
 		TaskInfo {
 			dependencies,
 			phony: rule.is_phony(),
