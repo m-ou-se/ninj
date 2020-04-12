@@ -394,6 +394,10 @@ impl AsyncBuildQueue {
 			condvar: &self.condvar,
 		}
 	}
+
+	pub fn into_inner(self) -> BuildQueue {
+		self.queue.into_inner().unwrap()
+	}
 }
 
 impl<'a> LockedAsyncBuildQueue<'a> {
