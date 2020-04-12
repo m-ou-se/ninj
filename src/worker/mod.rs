@@ -13,6 +13,7 @@ use ninj::queue::AsyncBuildQueue;
 use ninj::spec::{BuildCommand, BuildRule, DepStyle, Spec};
 use raw_string::unix::RawStrExt;
 use raw_string::RawStr;
+use std::fs::create_dir_all;
 use std::os::unix::process::ExitStatusExt;
 use std::process::exit;
 use std::process::ExitStatus;
@@ -116,6 +117,16 @@ impl<'a> Worker<'a> {
 
 		// Start the clock!
 		let start_time = Instant::now();
+
+		// Create directories for the output.
+		for output in &rule.outputs {
+			if let Some(dir) = output.as_path().parent() {
+				create_dir_all(dir).unwrap_or_else(|e| {
+					error!("Unable to create directory {:?}: {}", dir, e);
+					exit(1);
+				});
+			}
+		}
 
 		// Run the command, capturing its output.
 		let child = std::process::Command::new("sh")
